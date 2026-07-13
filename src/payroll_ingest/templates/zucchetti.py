@@ -87,8 +87,17 @@ _TAX_CODE_FIELDS = {
 
 def is_zucchetti_document(doc: RawExtractedDocument) -> bool:
     page = doc.first_page
+    header_rows = [row for row in page.rows if row.top < 60]
     target = normalize_label("Codice Azienda Ragione Sociale")
-    return any(normalize_label(row.text) == target for row in page.rows if row.top < 60)
+    if any(normalize_label(row.text) == target for row in header_rows):
+        return True
+    # Fallback: su alcuni cedolini (osservato su periodi/font diversi da quelli
+    # analizzati inizialmente) questa riga e' corrotta in modo piu' severo del
+    # solito glitch spazio->'s' e non decodifica in modo riconoscibile. La riga
+    # "codice azienda + ragione sociale" appena sotto resta leggibile ed e'
+    # un'ancora altrettanto specifica del template (stesso pattern gia' usato in
+    # _parse_header per estrarre l'azienda).
+    return any(_COMPANY_CODE_ROW_RE.match(row.text) for row in header_rows)
 
 
 def _column_of(x0: float) -> str:

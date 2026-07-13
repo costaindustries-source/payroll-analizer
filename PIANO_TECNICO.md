@@ -235,6 +235,14 @@ Tutti validati con Pydantic v2; la classificazione del dato è di primo livello 
 - `/logs` contiene log di run e per-documento; l'audit DB registra le transizioni di stato.
 - L'**export** produce un bundle **versionato** con manifest reimportabile; un reimport di prova ricostruisce i conteggi per tabella.
 
+## 17. Limitazioni note
+
+**Font Zucchetti corrotto su alcuni cedolini (07.pdf, 08.pdf, 202201.pdf — verificato 2026-07-13).** Il glitch di encoding già noto (spazio decodificato come lettera `s` nell'header, gestito da `normalize_label`, v. §9) su questi 3 documenti è più estesa: non solo la riga "Codice Azienda Ragione Sociale" ma anche la riga di intestazione colonne (quella con "TRATTENUTE"/"COMPETENZE" che delimita l'inizio delle righe voce in `_extract_causale_rows`) decodifica in modo illeggibile e non recuperabile con la normalizzazione esistente.
+
+- **Fix applicato** (`is_zucchetti_document` in `templates/zucchetti.py`): se la riga header esatta non matcha, fallback sul pattern `_COMPANY_CODE_ROW_RE` (codice azienda a 6 cifre + ragione sociale), già usato in `_parse_header` e verificato leggibile su questi 3 file. Il documento viene quindi riconosciuto come `zucchetti_standard` e azienda/dipendente/periodo/CF vengono estratti correttamente.
+- **Non risolto deliberatamente**: le righe voce/contributi/TFR/totali di questi 3 documenti restano vuote (0 pay_lines), perché il marcatore che ne delimita l'inizio è tra le righe corrotte. Il documento viene quindi salvato con stato `PROCESSED_WITH_ANOMALIES` e anomalia esplicita `nessuna_riga_voce` (warning) — **nessun importo viene inventato o dedotto da testo corrotto**: il rischio di leggere un valore finanziario sbagliato e trattarlo come corretto è stato considerato inaccettabile per questo dominio. Il testo grezzo integrale resta comunque in `raw_extraction` per un'eventuale rilettura manuale o un parser dedicato futuro.
+- Se in futuro si vuole recuperare anche le righe voce di questi documenti, serve un'euristica di fallback per l'inizio/fine della sezione voci (es. prima riga che matcha un codice causale `_CODE_RE` dopo il blocco header, invece del testo di intestazione) — va validata a mano riga per riga prima di fidarsi degli importi estratti.
+
 ---
 
 ## Verifica (come dimostrare che funziona)
