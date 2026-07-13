@@ -1,0 +1,12 @@
+# Copia in docker-compose.override.yml (non versionato, v. .gitignore) per
+# sovrascrivere impostazioni specifiche di QUESTO ambiente senza mai doverle
+# gestire in docker-compose.yml (che resta identico su ogni ambiente e va in
+# git). docker compose unisce automaticamente i due file, se presenti nella
+# stessa cartella - nessun flag aggiuntivo richiesto.
+#
+# Esempio reale: porta host del DB diversa dal default 5432 per evitare
+# collisioni con altri Postgres locali sulla stessa macchina.
+services:
+  db:
+    ports:
+      - "127.0.0.1:5433:5432"

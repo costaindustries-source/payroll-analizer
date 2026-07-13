@@ -26,6 +26,19 @@ regressione, con CF e importi retributivi veri) e qualunque file in
 vanno **mai** committati. Se un giorno un `git status` li mostra come "nuovo
 file", fermarsi e capire perché prima di fare `git add`.
 
+## Configurazione specifica per ambiente
+
+`docker-compose.yml` è identico su ogni ambiente e va in git. Qualunque
+override locale (es. porta host del DB diversa per evitare collisioni con
+altri Postgres sulla stessa macchina) va in `docker-compose.override.yml`
+(non versionato — v. `docker-compose.override.yml.example`), mai modificato
+direttamente in `docker-compose.yml`: altrimenti un `git checkout` di un tag
+successivo lo sovrascrive silenziosamente (scoperto proprio così su Debian,
+porta 5433 vs 5432 di git, durante il primo bootstrap di questo processo —
+impatto limitato perché l'app si connette al DB via rete Docker interna
+(`db:5432`), non tramite la porta pubblicata sull'host, ma rompe comunque
+client esterni come DBeaver/SQLTools se non corretto).
+
 ## Versionamento
 
 Tag SemVer (`vX.Y.Z`) sul branch `main`:

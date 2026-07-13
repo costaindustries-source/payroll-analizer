@@ -30,3 +30,8 @@ work/*
 # reali): restano solo in locale, non vanno mai su un remote git.
 docs/payroll-test/*.pdf
 
+# Override locale per ambiente (es. porta host del DB pubblicata diversa da
+# quella di default, per evitare collisioni su una macchina condivisa):
+# v. docker-compose.override.yml.example.
+docker-compose.override.yml
+
