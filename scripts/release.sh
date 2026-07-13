@@ -48,6 +48,11 @@ on_debian_ensure_git_history() {
     fi
     echo "Debian non ha ancora una history git collegata: aggancio a $BOOTSTRAP_TAG (nessun file toccato)."
     on_debian "git reset $BOOTSTRAP_TAG"
+    # .gitignore non e' una personalizzazione deliberata (a differenza di
+    # docker-compose.yml, coperto dall'override): e' solo drift, non e' mai
+    # stato aggiornato da questo processo prima d'ora. Sincronizzarlo subito
+    # evita che blocchi il checkout del tag di destinazione.
+    on_debian "git checkout -q HEAD -- .gitignore"
 }
 
 confirm() {
@@ -74,8 +79,14 @@ deploy_tag_to_debian() {
     on_debian_ensure_git_history
     ensure_debian_override_file
     on_debian_fetch_tags
-    on_debian "git checkout -q $version"
-    on_debian "docker compose build app"
+    if ! on_debian "git checkout -q $version"; then
+        echo "ERRORE: checkout di $version fallito su Debian, deploy interrotto." >&2
+        return 1
+    fi
+    if ! on_debian "docker compose build app"; then
+        echo "ERRORE: build immagine fallita su Debian, deploy interrotto." >&2
+        return 1
+    fi
 
     echo "== Smoke test sull'immagine Debian appena costruita =="
     if ! on_debian "docker compose run --rm -v \"\$(pwd)/scripts:/smoke:ro\" app python /smoke/smoke_test.py --samples-dir /data/docs/payroll-test"; then
@@ -109,7 +120,10 @@ cmd_rollback() {
     echo "== Rollback Debian al tag $target_tag =="
     on_debian_ensure_git_history
     on_debian_fetch_tags
-    on_debian "git checkout -q $target_tag"
+    if ! on_debian "git checkout -q $target_tag"; then
+        echo "ERRORE: checkout di $target_tag fallito su Debian." >&2
+        exit 1
+    fi
     if ! confirm "Rebuild immagine Docker su Debian per il tag $target_tag?"; then
         echo "Rollback interrotto: codice checked out, immagine non ricostruita."
         exit 1
