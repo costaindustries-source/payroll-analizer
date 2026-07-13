@@ -30,12 +30,20 @@ def normalize_label(text: str) -> str:
 
 def parse_amount(token: str) -> Decimal | None:
     """Converte un importo in formato italiano ('1.234,56', '(128,00)') in Decimal.
-    Le parentesi indicano un valore negativo (trattenuta)."""
+    Le parentesi indicano un valore negativo (trattenuta). La parentesi aperta e
+    chiusa sono valutate indipendentemente (non richiedono la coppia): su alcuni
+    cedolini con glitch di font piu' esteso (v. issue GH #3) la ')' di chiusura
+    resta leggibile ma fusa nello stesso token dell'importo senza spazio (es.
+    '297,10)'), mentre la '(' di apertura decodifica come '{' in un token a se'."""
     token = token.strip()
-    negative = token.startswith("(") and token.endswith(")")
-    if negative:
-        token = token[1:-1].strip()
-    token = token.replace(".", "").replace(",", ".")
+    negative = False
+    if token.startswith("(") or token.startswith("{"):
+        negative = True
+        token = token[1:]
+    if token.endswith(")"):
+        negative = True
+        token = token[:-1]
+    token = token.strip().replace(".", "").replace(",", ".")
     try:
         value = Decimal(token)
     except InvalidOperation:

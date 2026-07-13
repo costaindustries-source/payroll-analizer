@@ -47,6 +47,9 @@ _TWO_DATES_ROW_RE = re.compile(r"^(\d{2}-\d{2}-\d{4})\s+(\d{2}-\d{2}-\d{4})$")
 _HEADER_MAX_TOP = 260.0
 
 UNIT_TOKENS = {"GG", "ORE", "%"}
+# "{" e' la resa vista dal glitch di font per la parentesi aperta di un importo
+# negativo su alcuni cedolini (v. issue GH #3, 07.pdf/08.pdf/202201.pdf).
+_PAREN_MARKERS = {"(", ")", "{", "}"}
 IMPORTO_BASE_MIN = 200.0
 RIFERIMENTO_MIN = 345.0
 TRATTENUTE_MIN = 445.0
@@ -115,12 +118,12 @@ def _column_of(x0: float) -> str:
 
 
 def _looks_like_data(text: str) -> bool:
-    return text in UNIT_TOKENS or text in ("(", ")") or parse_amount(text) is not None
+    return text in UNIT_TOKENS or text in _PAREN_MARKERS or parse_amount(text) is not None
 
 
 def _first_amount(words: list[Word]) -> Decimal | None:
     for w in words:
-        if w.text in ("(", ")"):
+        if w.text in _PAREN_MARKERS:
             continue
         value = parse_amount(w.text)
         if value is not None:
@@ -132,17 +135,21 @@ def _split_amount_zone(words: list[Word]) -> tuple[Decimal | None, Decimal | Non
     """Un valore tra parentesi e' sempre una trattenuta, indipendentemente dalla
     colonna x in cui il tipografo Zucchetti lo visualizza (spesso coincide con la
     fascia COMPETENZE). Senza parentesi, la colonna x decide (trattenute a sinistra
-    di COMPETENZE_MIN, competenze da COMPETENZE_MIN in poi)."""
-    has_parens = any(w.text in ("(", ")") for w in words)
+    di COMPETENZE_MIN, competenze da COMPETENZE_MIN in poi). Normalmente il marker
+    parentesi e' un token a se' stante (has_parens), ma su alcuni cedolini con
+    glitch di font piu' esteso (v. issue GH #3) la ')' di chiusura e' fusa nel
+    token dell'importo senza alcun marker separato nella riga (es. '408,00)' senza
+    nessuna '(' o '{' altrove): in quel caso il segno gia' negativo restituito da
+    parse_amount e' l'unico segnale disponibile."""
+    has_parens = any(w.text in _PAREN_MARKERS for w in words)
     for w in words:
-        if w.text in ("(", ")"):
+        if w.text in _PAREN_MARKERS:
             continue
         value = parse_amount(w.text)
         if value is None:
             continue
-        value = abs(value)
-        if has_parens or w.x0 < COMPETENZE_MIN:
-            return value, None
+        if has_parens or value < 0 or w.x0 < COMPETENZE_MIN:
+            return abs(value), None
         return None, value
     return None, None
 
@@ -217,16 +224,28 @@ def _classify_causale(descrizione: str) -> PayLineCategory:
     return PayLineCategory.ALTRO
 
 
+_MAX_LEADING_MARKERS = 2
+
+
+def _leading_code_index(words: list[Word]) -> int | None:
+    """Trova l'indice del token codice-causale, tollerando fino a
+    _MAX_LEADING_MARKERS marcatori spuri iniziali. Il glitch di font che corrompe
+    l'intestazione colonne (v. issue GH #3, 07.pdf/08.pdf/202201.pdf) rende anche
+    il marker di riga in modo imprevedibile: non solo l'asterisco letterale, ma
+    anche un apostrofo spurio o sequenze come 'I<'. Il codice vero resta pero'
+    sempre entro le prime _MAX_LEADING_MARKERS+1 parole della riga."""
+    for idx in range(min(len(words), _MAX_LEADING_MARKERS + 1)):
+        if _CODE_RE.match(words[idx].text):
+            return idx
+    return None
+
+
 def _parse_causale_row(row: Row) -> PayLineDTO | None:
     words = row.words
-    idx = 0
-    while idx < len(words) and words[idx].text == "*":
-        idx += 1
-    if idx >= len(words):
+    idx = _leading_code_index(words)
+    if idx is None:
         return None
     code_word = words[idx]
-    if not _CODE_RE.match(code_word.text):
-        return None
     idx += 1
 
     # La descrizione e' la sequenza di parole "non numeriche" dopo il codice: alcune
@@ -254,7 +273,7 @@ def _parse_causale_row(row: Row) -> PayLineDTO | None:
     quantita = None
     aliquota = None
     unita = None
-    riferimento_words = [w for w in buckets["riferimento"] if w.text not in ("(", ")")]
+    riferimento_words = [w for w in buckets["riferimento"] if w.text not in _PAREN_MARKERS]
     unit_words = [w for w in riferimento_words if w.text in UNIT_TOKENS]
     numeric_words = [w for w in riferimento_words if w.text not in UNIT_TOKENS]
     if unit_words:
@@ -284,6 +303,29 @@ def _parse_causale_row(row: Row) -> PayLineDTO | None:
     )
 
 
+def _fallback_causale_bounds(rows: list[Row]) -> tuple[int | None, int]:
+    """Fallback quando la riga di intestazione 'TRATTENUTE COMPETENZE' e' corrotta
+    oltre quanto normalize_label puo' tollerare (osservato su 07.pdf/08.pdf/202201.pdf,
+    v. issue GH #3: non il solito glitch spazio->'s', ma glyph totalmente
+    irriconoscibili). Le righe voce restano leggibili: l'ancora diventa la prima
+    riga, dopo l'header, il cui codice causale e' riconoscibile (v.
+    _leading_code_index), a prescindere dal testo dell'intestazione colonne."""
+    start_idx = None
+    end_idx = len(rows)
+    for i, row in enumerate(rows):
+        if row.top < _HEADER_MAX_TOP:
+            continue
+        if start_idx is None:
+            if _leading_code_index(row.words) is not None:
+                start_idx = i
+            continue
+        norm = normalize_label(row.text)
+        if norm.startswith(_TFR_BOUNDARY_LABEL) or "totalecompetenze" in norm:
+            end_idx = i
+            break
+    return start_idx, end_idx
+
+
 def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str]]:
     """Analizza le righe voce dinamiche, delimitate tra l'intestazione colonne e
     'Retribuzione utile T.F.R.' (o il primo TOTALE, se il TFR non e' presente)."""
@@ -298,7 +340,9 @@ def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str]]
             end_idx = i
             break
     if start_idx is None:
-        return [], []
+        start_idx, end_idx = _fallback_causale_bounds(rows)
+        if start_idx is None:
+            return [], []
 
     pay_lines: list[PayLineDTO] = []
     unmapped: list[str] = []
