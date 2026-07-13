@@ -9,3 +9,10 @@ fix: smoke test nell immagine Docker (mount ad-hoc non funzionava)
 
 - Tag precedente su Debian: v0.1.1
 - Smoke test post-deploy: OK
+
+## v0.1.3 — 2026-07-13T14:05:26Z
+
+fix(zucchetti): recupera pay_lines e importi su cedolini con corruzione estesa del font (chiude #3)
+
+- Tag precedente su Debian: v0.1.2
+- Smoke test post-deploy: OK
