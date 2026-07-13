@@ -1,0 +1,13 @@
+.venv
+**/__pycache__
+**/*.pyc
+.git
+input
+processed
+error
+logs
+export
+work
+docs
+*.md
+!README.md

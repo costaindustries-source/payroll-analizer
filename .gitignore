@@ -1,0 +1,32 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Runtime data (non versionati)
+input/*
+!input/.gitkeep
+processed/*
+!processed/.gitkeep
+error/*
+!error/.gitkeep
+logs/*
+!logs/.gitkeep
+export/*
+!export/.gitkeep
+work/*
+!work/.gitkeep
+
+# Env
+.env
+
+# Cedolini reali usati come fixture di regressione (CF/importi retributivi
+# reali): restano solo in locale, non vanno mai su un remote git.
+docs/payroll-test/*.pdf
+

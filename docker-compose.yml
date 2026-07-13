@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: payroll
+      POSTGRES_PASSWORD: payroll
+      POSTGRES_DB: payroll
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      # Solo loopback: il DB contiene dati retributivi reali con credenziali
+      # banali, non va esposto sulla LAN (basta l'accesso da client locali,
+      # es. DBeaver/SQLTools sull'host stesso).
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payroll"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://payroll:payroll@db:5432/payroll
+      PAYROLL_BASE_DIR: /data
+    volumes:
+      - ./input:/data/input
+      - ./processed:/data/processed
+      - ./error:/data/error
+      - ./logs:/data/logs
+      - ./export:/data/export
+      - ./work:/data/work
+      - ./docs:/data/docs:ro
+    command: ["payroll-ingest", "--help"]
+
+volumes:
+  db_data:
