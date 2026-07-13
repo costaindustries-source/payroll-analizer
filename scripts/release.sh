@@ -78,6 +78,13 @@ cmd_release() {
     fi
     local previous_tag
     previous_tag="$(on_debian "git describe --tags --abbrev=0" || echo "")"
+    # Garantisce l'override di config specifica per ambiente PRIMA del checkout
+    # (idempotente: non tocca nulla se il file esiste gia'): senza, un checkout
+    # che tocca docker-compose.yml lascerebbe una finestra con la porta host
+    # del DB tornata al default versionato, invece di quella reale di questo
+    # ambiente (v. docs/RELEASE_PROCESS.md, sezione "Configurazione specifica
+    # per ambiente").
+    on_debian "test -f docker-compose.override.yml || printf 'services:\n  db:\n    ports:\n      - \\\"127.0.0.1:5433:5432\\\"\n' > docker-compose.override.yml"
     on_debian "git fetch --tags -q && git checkout -q $version"
     on_debian "docker compose build app"
 
