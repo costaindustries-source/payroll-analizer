@@ -23,3 +23,10 @@ feat(cli): comando delete-document per rielaborare documenti gia' processati
 
 - Tag precedente su Debian: v0.1.3
 - Smoke test post-deploy: OK
+
+## v0.3.0 — 2026-07-13T15:37:51Z
+
+Fix glitch font Zucchetti (Z->2 su codici causale, O->0 su IBAN, issue #4) + comando CLI check-years per verifica copertura annuale
+
+- Tag precedente su Debian: v0.2.0
+- Smoke test post-deploy: OK
