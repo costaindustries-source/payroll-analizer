@@ -89,7 +89,7 @@ deploy_tag_to_debian() {
     fi
 
     echo "== Smoke test sull'immagine Debian appena costruita =="
-    if ! on_debian "docker compose run --rm -v \"\$(pwd)/scripts:/smoke:ro\" app python /smoke/smoke_test.py --samples-dir /data/docs/payroll-test"; then
+    if ! on_debian "docker compose run --rm app python scripts/smoke_test.py --samples-dir /data/docs/payroll-test"; then
         echo "SMOKE TEST FALLITO su Debian." >&2
         if [[ -n "$previous_tag" ]] && confirm "Rollback automatico al tag precedente ($previous_tag)?"; then
             on_debian "git checkout -q $previous_tag && docker compose build app"

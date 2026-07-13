@@ -27,6 +27,7 @@ RUN uv sync --frozen --no-install-project
 COPY src ./src
 COPY alembic.ini ./
 COPY alembic ./alembic
+COPY scripts ./scripts
 RUN uv sync --frozen
 
 # UID/GID 1000 = primo utente standard su Debian/Ubuntu: evita che i file creati
