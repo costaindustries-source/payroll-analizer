@@ -43,15 +43,15 @@ on_debian_fetch_tags() {
 # tree) - operazione sicura solo perche' il contenuto su disco e' stato
 # verificato identico a quel tag prima di introdurre questo script.
 on_debian_ensure_git_history() {
-    if on_debian "git rev-parse HEAD" >/dev/null 2>&1; then
-        return 0
+    if ! on_debian "git rev-parse HEAD" >/dev/null 2>&1; then
+        echo "Debian non ha ancora una history git collegata: aggancio a $BOOTSTRAP_TAG (nessun file toccato)."
+        on_debian "git reset $BOOTSTRAP_TAG"
     fi
-    echo "Debian non ha ancora una history git collegata: aggancio a $BOOTSTRAP_TAG (nessun file toccato)."
-    on_debian "git reset $BOOTSTRAP_TAG"
     # .gitignore non e' una personalizzazione deliberata (a differenza di
-    # docker-compose.yml, coperto dall'override): e' solo drift, non e' mai
-    # stato aggiornato da questo processo prima d'ora. Sincronizzarlo subito
-    # evita che blocchi il checkout del tag di destinazione.
+    # docker-compose.yml, coperto dall'override): e' solo drift residuo del
+    # bootstrap, non e' mai stato aggiornato da questo processo prima d'ora.
+    # Sincronizzarlo (idempotente, ad ogni deploy) evita che blocchi il
+    # checkout del tag di destinazione.
     on_debian "git checkout -q HEAD -- .gitignore"
 }
 
