@@ -42,6 +42,19 @@ cp processed/2025/07/07.pdf input/    # ricopia il PDF (delete-document non tocc
 docker compose run --rm app payroll-ingest process
 ```
 
+### Verificare la copertura per annualita'
+
+```bash
+docker compose run --rm app payroll-ingest check-years
+```
+
+Per ogni anno mostra `caricati/totale` (caricato = status `PROCESSED`, zero
+anomalie di qualunque severita') e, per ogni documento non al 100%, il file e
+l'elenco delle anomalie che lo riguardano (comprese quelle solo `info`, es.
+`righe_non_mappate`). I documenti il cui periodo non e' stato riconosciuto
+(nessun anno attribuibile) sono elencati a parte. Exit code 1 se esiste almeno
+un documento non completamente caricato.
+
 ## Gestione servizi Docker
 
 ```bash

@@ -5,6 +5,7 @@ import typer
 from sqlalchemy import delete, select
 
 from payroll_ingest.config import get_settings
+from payroll_ingest.coverage import check_years
 from payroll_ingest.db import make_session_factory
 from payroll_ingest.db import session_scope as _session_scope
 from payroll_ingest.exporter import export_database
@@ -102,6 +103,43 @@ def delete_document(
         session.delete(doc)
 
     typer.echo("Documento cancellato. Ricopia il PDF in input/ e rilancia `payroll-ingest process` per ricaricarlo.")
+
+
+@app.command("check-years")
+def check_years_command() -> None:
+    """Per ogni annualita', mostra quanti documenti sono completamente caricati
+    (status PROCESSED, zero anomalie) e quali file hanno anomalie/scarti da
+    rivedere (codice ed elenco anomalie). Exit code 1 se esiste almeno un
+    documento non completamente caricato."""
+    settings = get_settings()
+    session_factory = make_session_factory(settings)
+
+    with _session_scope(session_factory) as session:
+        per_anno, senza_anno = check_years(session)
+
+    if not per_anno and not senza_anno:
+        typer.echo("Nessun documento in database.")
+        return
+
+    has_problems = False
+    for coverage in per_anno:
+        typer.echo(f"{coverage.anno}: {coverage.caricati}/{coverage.totale} caricati (100% OK, zero anomalie)")
+        for problema in coverage.problemi:
+            has_problems = True
+            typer.echo(f"  ! {problema.filename} [{problema.status}]")
+            for anomalia in problema.anomalie:
+                typer.echo(f"      {anomalia}")
+
+    if senza_anno:
+        has_problems = True
+        typer.echo(f"\nSenza annualita' attribuibile ({len(senza_anno)} file, periodo non riconosciuto):")
+        for problema in senza_anno:
+            typer.echo(f"  ! {problema.filename} [{problema.status}]")
+            for anomalia in problema.anomalie:
+                typer.echo(f"      {anomalia}")
+
+    if has_problems:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

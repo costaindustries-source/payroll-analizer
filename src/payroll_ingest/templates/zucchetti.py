@@ -226,6 +226,32 @@ def _classify_causale(descrizione: str) -> PayLineCategory:
 
 _MAX_LEADING_MARKERS = 2
 
+# Glitch di font Z->2 confermato su 07.pdf/08.pdf/202201.pdf (issue GH #4). Un
+# codice causale Zucchetti e' sempre lettere-poi-cifre (v. _CODE_RE): un '2'
+# iniziale seguito da un'altra lettera non e' quindi mai un codice valido a
+# prescindere dal glitch, ed e' sicuro dedurre che quel '2' era una 'Z'. Quando
+# invece il '2' iniziale e' seguito solo da cifre, il codice combacia per caso
+# con _CODE_RE (0 lettere ammesse) e non e' distinguibile da un codice
+# genuinamente numerico: qui NON correggiamo il valore (nessun checksum
+# disponibile per validarlo, a differenza dell'IBAN), ci limitiamo a segnalarlo
+# come sospetto in map_document quando nello stesso documento la corruzione e'
+# gia' confermata altrove.
+_CAUSALE_CORRUPT_DIGIT = "2"
+_CAUSALE_CORRECT_LETTER = "Z"
+_SUSPECT_LEADING_2_RE = re.compile(r"^2\d{3,5}$")
+
+
+def _recover_causale_code(raw_code: str) -> tuple[str, bool]:
+    """Ritorna (codice, corretto_automaticamente). Vedi nota sopra _SUSPECT_LEADING_2_RE
+    sul perche' solo il caso 'digit seguito da lettera' e' corretto qui."""
+    if _CODE_RE.match(raw_code):
+        return raw_code, False
+    if len(raw_code) > 1 and raw_code[0] == _CAUSALE_CORRUPT_DIGIT and raw_code[1].isalpha():
+        candidate = _CAUSALE_CORRECT_LETTER + raw_code[1:]
+        if _CODE_RE.match(candidate):
+            return candidate, True
+    return raw_code, False
+
 
 def _leading_code_index(words: list[Word]) -> int | None:
     """Trova l'indice del token codice-causale, tollerando fino a
@@ -235,17 +261,20 @@ def _leading_code_index(words: list[Word]) -> int | None:
     anche un apostrofo spurio o sequenze come 'I<'. Il codice vero resta pero'
     sempre entro le prime _MAX_LEADING_MARKERS+1 parole della riga."""
     for idx in range(min(len(words), _MAX_LEADING_MARKERS + 1)):
-        if _CODE_RE.match(words[idx].text):
+        text = words[idx].text
+        if _CODE_RE.match(text) or _recover_causale_code(text)[1]:
             return idx
     return None
 
 
-def _parse_causale_row(row: Row) -> PayLineDTO | None:
+def _parse_causale_row(row: Row) -> tuple[PayLineDTO, tuple[str, str] | None] | None:
     words = row.words
     idx = _leading_code_index(words)
     if idx is None:
         return None
     code_word = words[idx]
+    codice, corretto = _recover_causale_code(code_word.text)
+    causale_correction = (code_word.text, codice) if corretto else None
     idx += 1
 
     # La descrizione e' la sequenza di parole "non numeriche" dopo il codice: alcune
@@ -287,8 +316,8 @@ def _parse_causale_row(row: Row) -> PayLineDTO | None:
 
     trattenuta, competenza = _split_amount_zone(buckets["importo"])
 
-    return PayLineDTO(
-        codice=code_word.text,
+    line = PayLineDTO(
+        codice=codice,
         descrizione=descrizione,
         categoria=_classify_causale(descrizione),
         is_recognized=True,
@@ -301,6 +330,7 @@ def _parse_causale_row(row: Row) -> PayLineDTO | None:
         raw_text=row.text,
         classification=DataClassification.OPZIONALE,
     )
+    return line, causale_correction
 
 
 def _fallback_causale_bounds(rows: list[Row]) -> tuple[int | None, int]:
@@ -326,9 +356,12 @@ def _fallback_causale_bounds(rows: list[Row]) -> tuple[int | None, int]:
     return start_idx, end_idx
 
 
-def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str]]:
+def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str], list[tuple[str, str]]]:
     """Analizza le righe voce dinamiche, delimitate tra l'intestazione colonne e
-    'Retribuzione utile T.F.R.' (o il primo TOTALE, se il TFR non e' presente)."""
+    'Retribuzione utile T.F.R.' (o il primo TOTALE, se il TFR non e' presente).
+    Il terzo elemento ritornato sono le correzioni automatiche codice_causale
+    (originale, corretto) applicate da _recover_causale_code, da segnalare come
+    anomalia esplicita in map_document (v. issue GH #4)."""
     start_idx = None
     end_idx = len(rows)
     for i, row in enumerate(rows):
@@ -342,17 +375,21 @@ def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str]]
     if start_idx is None:
         start_idx, end_idx = _fallback_causale_bounds(rows)
         if start_idx is None:
-            return [], []
+            return [], [], []
 
     pay_lines: list[PayLineDTO] = []
     unmapped: list[str] = []
+    corrections: list[tuple[str, str]] = []
     for row in rows[start_idx:end_idx]:
-        line = _parse_causale_row(row)
-        if line is not None:
+        parsed = _parse_causale_row(row)
+        if parsed is not None:
+            line, correction = parsed
             pay_lines.append(line)
+            if correction is not None:
+                corrections.append(correction)
         elif row.text.strip():
             unmapped.append(row.text)
-    return pay_lines, unmapped
+    return pay_lines, unmapped, corrections
 
 
 def _extract_tax(pay_lines: list[PayLineDTO], rows: list[Row]) -> TaxDTO:
@@ -486,6 +523,39 @@ def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
     return balances
 
 
+# Glitch di font O->0 confermato su 07.pdf/08.pdf (issue GH #4): il CIN (5o
+# carattere di un IBAN italiano) e' sempre una lettera, quindi una cifra in
+# quella posizione e' un segnale di corruzione in un punto strutturalmente
+# noto. A differenza dei codici causale, qui esiste un verificatore
+# indipendente (il checksum standard IBAN ISO 7064 mod 97-10): proviamo le
+# sostituzioni cifra->lettera visivamente plausibili in quella sola posizione
+# e accettiamo solo quella che supera il checksum, cosi' da non indovinare un
+# dato bancario senza una conferma matematica.
+_IBAN_CONFUSABLE_CIN = {"0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B"}
+
+
+def _iban_mod97_valid(iban: str) -> bool:
+    rearranged = iban[4:] + iban[:4]
+    try:
+        digits = "".join(str(int(ch, 36)) for ch in rearranged)
+    except ValueError:
+        return False
+    return int(digits) % 97 == 1
+
+
+def _recover_iban(raw: str) -> tuple[str, bool]:
+    """Ritorna (iban, corretto_automaticamente). Vedi nota sopra _IBAN_CONFUSABLE_CIN."""
+    if len(raw) != 27 or not raw.startswith("IT") or not raw[4].isdigit():
+        return raw, False
+    letter = _IBAN_CONFUSABLE_CIN.get(raw[4])
+    if letter is None:
+        return raw, False
+    candidate = raw[:4] + letter + raw[5:]
+    if _iban_mod97_valid(candidate):
+        return candidate, True
+    return raw, False
+
+
 def _extract_totals(rows: list[Row]) -> PayrollTotalsDTO:
     totals = PayrollTotalsDTO()
     netto_label_norm = normalize_label("NETTO DEL MESE")
@@ -521,11 +591,18 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
     rows = page.rows
 
     company, employee, hire_date_str, tipo_costo_text = _parse_header(rows)
-    pay_lines, unmapped_rows = _extract_causale_rows(rows)
+    pay_lines, unmapped_rows, causale_corrections = _extract_causale_rows(rows)
     tax = _extract_tax(pay_lines, rows)
     tfr = _extract_tfr(rows)
     leave_balances = _extract_leave_balances(rows)
     totals = _extract_totals(rows)
+
+    iban_correction: tuple[str, str] | None = None
+    if totals.iban:
+        corrected_iban, iban_corretto = _recover_iban(totals.iban)
+        if iban_corretto:
+            iban_correction = (totals.iban, corrected_iban)
+            totals.iban = corrected_iban
 
     period_type = _detect_period_type(tipo_costo_text, pay_lines)
     month_year = parse_italian_month_year(tipo_costo_text or "")
@@ -605,6 +682,54 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
                 severita=AnomalySeverity.INFO,
                 messaggio=f"{len(unmapped_rows)} righe nella sezione voci non sono state mappate",
                 campo="pay_lines",
+            )
+        )
+
+    for originale, corretto in causale_corrections:
+        dto.anomalies.append(
+            AnomalyDTO(
+                tipo="codice_causale_corretto_automaticamente",
+                severita=AnomalySeverity.WARNING,
+                messaggio=(
+                    f"Codice causale {originale!r} corretto in {corretto!r} (glitch font Z->2, "
+                    "v. issue GH #4) - verificare manualmente"
+                ),
+                campo="pay_lines",
+            )
+        )
+
+    if causale_corrections:
+        # La corruzione Z->2 e' gia' confermata su questo documento (v. sopra): un
+        # codice puramente numerico che inizia per '2' e' quindi sospetto, ma senza
+        # un checksum non possiamo correggerlo (v. nota su _SUSPECT_LEADING_2_RE).
+        for line in pay_lines:
+            if line.codice and _SUSPECT_LEADING_2_RE.match(line.codice):
+                dto.anomalies.append(
+                    AnomalyDTO(
+                        tipo="codice_causale_sospetto",
+                        severita=AnomalySeverity.WARNING,
+                        messaggio=(
+                            f"Codice causale {line.codice!r} e' puramente numerico e inizia con "
+                            "'2': nello stesso documento e' confermata la corruzione del font "
+                            "Z->2 su almeno un altro codice (v. issue GH #4). Verificare a mano "
+                            "se anche questo era 'Z' + cifre."
+                        ),
+                        campo="pay_lines",
+                    )
+                )
+
+    if iban_correction:
+        originale_iban, corretto_iban = iban_correction
+        dto.anomalies.append(
+            AnomalyDTO(
+                tipo="iban_corretto_automaticamente",
+                severita=AnomalySeverity.WARNING,
+                messaggio=(
+                    f"IBAN {originale_iban!r} corretto in {corretto_iban!r} (CIN recuperato da "
+                    "glitch font, verificato via checksum IBAN standard, v. issue GH #4) - "
+                    "verificare manualmente"
+                ),
+                campo="totals.iban",
             )
         )
 
