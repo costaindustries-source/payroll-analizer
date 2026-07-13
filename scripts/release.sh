@@ -25,6 +25,15 @@ on_debian() {
     "$WSL" -d "$DEBIAN_DISTRO" -- bash -lc "cd $DEBIAN_REPO && $1"
 }
 
+# Il remote 'origin' su Debian non ha credenziali salvate (repo privato): usa
+# il token di 'gh' di QUESTA distro per un fetch autenticato via URL, senza
+# mai scriverlo nella config git di Debian (nessuna persistenza del secret).
+on_debian_fetch_tags() {
+    local token
+    token="$(gh auth token)"
+    on_debian "git -c credential.helper= fetch https://x-access-token:${token}@github.com/costaindustries-source/payroll-analizer.git --tags"
+}
+
 confirm() {
     read -r -p "$1 [y/N] " reply
     [[ "$reply" =~ ^[Yy]$ ]]
@@ -33,7 +42,8 @@ confirm() {
 cmd_rollback() {
     local target_tag="$1"
     echo "== Rollback Debian al tag $target_tag =="
-    on_debian "git fetch --tags -q && git checkout -q $target_tag"
+    on_debian_fetch_tags
+    on_debian "git checkout -q $target_tag"
     if ! confirm "Rebuild immagine Docker su Debian per il tag $target_tag?"; then
         echo "Rollback interrotto: codice checked out, immagine non ricostruita."
         exit 1
@@ -85,7 +95,8 @@ cmd_release() {
     # ambiente (v. docs/RELEASE_PROCESS.md, sezione "Configurazione specifica
     # per ambiente").
     on_debian "test -f docker-compose.override.yml || printf 'services:\n  db:\n    ports:\n      - \\\"127.0.0.1:5433:5432\\\"\n' > docker-compose.override.yml"
-    on_debian "git fetch --tags -q && git checkout -q $version"
+    on_debian_fetch_tags
+    on_debian "git checkout -q $version"
     on_debian "docker compose build app"
 
     echo "== 5/6 Smoke test sull'immagine Debian appena costruita =="
