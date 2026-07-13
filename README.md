@@ -1,3 +1,106 @@
 # payroll-ingest
 
-Batch di ingestion cedolini PDF -> database PostgreSQL. Vedi `PIANO_TECNICO.md` per il piano tecnico e `INSTALL-INFO.md` per l'installazione.
+Batch di ingestion cedolini PDF -> database PostgreSQL.
+
+Guide complete: [`INSTALL-INFO.md`](INSTALL-INFO.md) (installazione da zero),
+[`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md) (rilascio Ubuntu -> GitHub
+-> Debian), [`PIANO_TECNICO.md`](PIANO_TECNICO.md) (piano tecnico). Quanto
+segue è un riferimento rapido ai comandi usati più spesso.
+
+## Setup iniziale (una tantum)
+
+```bash
+docker compose build                          # immagine app (Python + Tesseract + dipendenze)
+docker compose up -d db                       # avvia Postgres e attende sia pronto
+docker compose run --rm app alembic upgrade head   # crea le tabelle
+```
+
+## Uso quotidiano
+
+```bash
+cp /percorso/dei/cedolini/*.pdf input/         # PDF da elaborare
+docker compose run --rm app payroll-ingest process   # elabora tutto input/
+docker compose run --rm app payroll-ingest export    # export completo -> export/<timestamp>_<schema>/
+```
+
+`process`: hash SHA-256 (skip dei duplicati già caricati) -> classificazione
+testuale/scansionato (OCR solo se serve) -> riconoscimento template + mapping
+-> salvataggio in una transazione per documento -> spostamento in
+`processed/<anno>/<mese>/` o `error/<file>.error.json` (un errore non blocca
+gli altri) -> log in `logs/batch_<run_id>.log` e `logs/run_<run_id>.json`.
+
+### Ricaricare un documento già processato
+
+Un documento con status `PROCESSED`/`PROCESSED_WITH_ANOMALIES` viene
+riconosciuto come duplicato (stesso sha256) e scartato senza essere
+rielaborato, anche dopo un fix del parser: va prima cancellato dal database.
+Solo `NEEDS_REVIEW` viene rielaborato in automatico da `process`.
+
+```bash
+docker compose run --rm app payroll-ingest delete-document --filename 07.pdf   # o --sha256/--id se il nome e' ambiguo
+cp processed/2025/07/07.pdf input/    # ricopia il PDF (delete-document non tocca il file su disco)
+docker compose run --rm app payroll-ingest process
+```
+
+## Gestione servizi Docker
+
+```bash
+docker compose stop        # ferma i container (dati Postgres intatti)
+docker compose up -d db     # riavvia solo il database
+docker compose down         # ferma e rimuove i container (volume dati NON toccato)
+```
+
+## Database
+
+```bash
+docker compose exec db psql -U payroll -d payroll                              # shell psql
+docker compose exec db psql -U payroll -d payroll -c "select count(*) from payroll_document;"
+docker compose exec db pg_dump -U payroll payroll > backup.sql                 # backup rapido
+```
+
+Client esterno (DBeaver/SQLTools): `localhost:5432`, utente/password/db `payroll`.
+
+## Migrations (Alembic)
+
+```bash
+docker compose run --rm app alembic upgrade head       # applica tutte le migration
+docker compose run --rm app alembic revision -m 'descrizione'   # nuova migration
+docker compose run --rm app alembic upgrade +1          # avanza di una
+docker compose run --rm app alembic downgrade -1         # torna indietro di una
+```
+
+## Test di regressione (smoke test)
+
+Gira sui 6 cedolini reali di riferimento in `docs/payroll-test/` (mai in git)
+dopo ogni modifica a `templates/zucchetti.py` o `extraction.py`:
+
+```bash
+.venv/bin/python scripts/smoke_test.py                          # locale (Ubuntu, venv host)
+docker compose run --rm app python scripts/smoke_test.py --samples-dir /data/docs/payroll-test   # dentro il container
+```
+
+## Sviluppo locale senza Docker (Ubuntu, gestito da `uv`)
+
+```bash
+uv sync                                  # crea/aggiorna .venv da uv.lock
+cp .env.example .env                     # DATABASE_URL -> localhost:5432 (serve comunque `docker compose up -d db`)
+uv run payroll-ingest process            # o: source .venv/bin/activate && payroll-ingest process
+uv run python scripts/smoke_test.py
+```
+
+## Rilascio (Ubuntu -> GitHub -> Debian prod)
+
+```bash
+scripts/release.sh vX.Y.Z          # rilascio completo: smoke test, tag+push, deploy Debian (con gate di conferma), smoke test post-deploy, log
+scripts/release.sh --deploy vX.Y.Z # riprende solo il deploy su Debian di un tag già pushato
+scripts/release.sh --rollback vX.Y.Z   # riporta Debian a un tag precedente
+```
+
+SemVer: **patch** (`v0.1.x`) fix senza cambio schema, **minor** (`v0.2.0`)
+nuove funzionalità, **major** (`v1.0.0`) cambio schema DB non retrocompatibile.
+
+## Risoluzione problemi comuni
+
+Vedi la sezione "Risoluzione problemi noti" in [`INSTALL-INFO.md`](INSTALL-INFO.md#7-risoluzione-problemi-noti)
+(plugin Compose mancante, permessi Docker, file di proprietà `root`, credential
+helper di Docker Desktop residuo).
