@@ -16,3 +16,10 @@ fix(zucchetti): recupera pay_lines e importi su cedolini con corruzione estesa d
 
 - Tag precedente su Debian: v0.1.2
 - Smoke test post-deploy: OK
+
+## v0.2.0 — 2026-07-13T14:38:03Z
+
+feat(cli): comando delete-document per rielaborare documenti gia' processati
+
+- Tag precedente su Debian: v0.1.3
+- Smoke test post-deploy: OK
