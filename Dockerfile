@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # tesseract-ocr + tesseract-ocr-ita: OCR per i PDF scansionati (fallback, §9 del piano).
 # ghostscript + unpaper + poppler-utils: dipendenze di ocrmypdf per normalizzare/pulire i PDF prima dell'OCR.
