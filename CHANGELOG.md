@@ -51,7 +51,17 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
     `CHANGELOG.md` a `## [vX.Y.Z] - <data>` e la committa -> conferma
     esplicita -> tag annotato + push. Nessun deploy: la promozione resta
     compito di ogni nodo con `update apply`. `release list` mostra la storia
-    dei tag pubblicati (locale + verifica su origin).
+    dei tag pubblicati (locale + verifica su origin). Dopo il push, crea
+    anche una GitHub Release via `gh` con le note del changelog appena
+    promosso (non bloccante: un fallimento logga solo un avviso).
+  - chiusura punti aperti (`docs/CLI_REDESIGN_PROPOSAL.md` §10): autenticazione
+    dei nodi verso GitHub via **deploy key SSH read-only**
+    (`payroll_cli/deploy_key.py` + `payroll setup --deploy-key`, solo
+    `role=node`: genera la coppia ed25519 in `~/.ssh/payroll-deploy` se non
+    esiste già, stampa la chiave pubblica da autorizzare a mano su GitHub,
+    converte il remote a SSH su richiesta, imposta `core.sshCommand` scoped
+    al solo repo locale); installazione CLI host confermata via `uv run`
+    (non `uv tool install`); nome comando confermato `payroll`.
 
 ## [v0.3.0] - 2026-07-13
 

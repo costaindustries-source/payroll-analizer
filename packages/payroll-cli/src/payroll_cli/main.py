@@ -66,6 +66,9 @@ def setup(
     bootstrap: bool = typer.Option(
         False, "--bootstrap", help="Dopo la configurazione: build immagine + avvio DB + migration (+ smoke test)."
     ),
+    deploy_key: bool = typer.Option(
+        False, "--deploy-key", help="Genera (se serve) una deploy key SSH read-only per questo nodo e configura il repo per usarla."
+    ),
 ) -> None:
     """Prima installazione: verifica prerequisiti, scrive la config per-macchina, opzionalmente fa il bootstrap."""
     setup_cmd.run(
@@ -77,6 +80,7 @@ def setup(
         logs_retention_days=logs_retention_days,
         backups_keep=backups_keep,
         do_bootstrap=bootstrap,
+        gen_deploy_key=deploy_key,
     )
 
 

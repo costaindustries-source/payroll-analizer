@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typer
 
-from payroll_cli import releaser
+from payroll_cli import changelog, releaser
 from payroll_cli.context import Context
 
 release_app = typer.Typer(
@@ -59,6 +59,9 @@ def new(
     except releaser.ReleaseError as exc:
         typer.echo(f"ERRORE: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+    notes = changelog.section_for_tag(repo_root, version) or ""
+    releaser.create_github_release(repo_root, version, notes, log=typer.echo)
 
     typer.echo(f"\nRilasciato {version} su GitHub. Ogni macchina si aggiorna con 'payroll update apply'.")
 

@@ -116,6 +116,24 @@ def push(repo_root: Path, version: str) -> None:
             raise ReleaseError(f"'git {' '.join(args)}' fallito: {result.stderr.strip()}")
 
 
+def create_github_release(repo_root: Path, version: str, notes: str, log=print) -> bool:
+    """Crea una GitHub Release via 'gh' con le note del changelog. Non
+    critico: un fallimento qui (es. 'gh' non autenticato su questa macchina)
+    non invalida il tag/push gia' avvenuti, viene solo segnalato."""
+    result = subprocess.run(
+        ["gh", "release", "create", version, "--title", version, "--notes", notes or "(nessuna voce in CHANGELOG.md)"],
+        cwd=repo_root, capture_output=True, text=True, stdin=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        log(
+            "ATTENZIONE: creazione della GitHub Release fallita (tag e push sono comunque "
+            f"riusciti): {result.stderr.strip()}"
+        )
+        return False
+    log(f"GitHub Release creata: {result.stdout.strip()}")
+    return True
+
+
 @dataclass
 class TagInfo:
     tag: str

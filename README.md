@@ -41,6 +41,7 @@ uv run payroll rollback vX.Y.Z             # torna a un tag precedente: checkout
 uv run payroll help update check           # help di un sottocomando annidato
 uv run payroll setup --check               # solo verifica prerequisiti (docker/compose/git/uv/disco/UID)
 uv run payroll setup --bootstrap           # wizard configurazione + build/avvio/migration/smoke test
+uv run payroll setup --deploy-key          # (solo role=node) genera/mostra la deploy key SSH read-only
 uv run payroll db backup                   # dump verificato + snapshot conteggi righe (backups/)
 uv run payroll db restore [dump]           # idempotente: no-op se lo schema esiste gia'
 uv run payroll db migrate [revision]       # alembic upgrade (default: head)
@@ -79,8 +80,21 @@ esistente) -> smoke test locale **obbligatorio** sui campioni di
 mai saltato) -> promuove la sezione `## [Non rilasciato]` di `CHANGELOG.md` a
 `## [vX.Y.Z] - <data>` (lasciandone una vuota in cima per il prossimo giro) e
 la committa -> chiede conferma esplicita -> crea il tag annotato e pusha
-`main` + il tag. **Non deploya nulla**: la promozione sulle macchine resta
-compito di ciascun nodo con `payroll update apply`.
+`main` + il tag -> crea anche una GitHub Release con le note del changelog
+appena promosso (via `gh`, non bloccante: se fallisce logga solo un avviso).
+**Non deploya nulla**: la promozione sulle macchine resta compito di
+ciascun nodo con `payroll update apply`.
+
+`payroll setup --deploy-key` (solo `role=node`: su `role=source` viene
+saltato con un avviso, quella macchina ha già credenziali in scrittura)
+genera — se non esiste già — una deploy key SSH read-only in
+`~/.ssh/payroll-deploy`, ne stampa la chiave pubblica da autorizzare a mano
+su GitHub (repo → Settings → Deploy keys → Add deploy key, **senza**
+spuntare "Allow write access"), offre di convertire il remote `origin` da
+HTTPS a SSH, e imposta `core.sshCommand` scoped al solo repo locale (`git
+config --local`, non tocca `~/.ssh/config` né altri progetti). Serve perché
+`payroll update apply` su un nodo deve poter fare `git fetch` da solo,
+senza le credenziali con permesso di scrittura della macchina `source`.
 
 ## Setup iniziale (una tantum)
 

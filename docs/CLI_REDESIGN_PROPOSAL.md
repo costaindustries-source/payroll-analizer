@@ -103,18 +103,17 @@ payroll-analizer/
 │           └── status.py           #    status/version
 ```
 
-Installazione sull'host (identica su source e nodi):
+Installazione sull'host (identica su source e nodi) — **decisa (v. §10.3): `uv run`**,
+non `uv tool install`: zero stato da tenere sincronizzato, il comando esegue sempre il
+codice del checkout corrente, quindi `payroll update apply` non deve re-installare
+nulla dopo il checkout (il `reexec_resume` di `updater.py` si limita a rilanciare
+`uv run payroll update apply --resume`, che carica gia' da solo il codice nuovo):
 
 ```bash
 # prerequisiti host: git, docker, uv (un solo binario statico, curl -LsSf https://astral.sh/uv/install.sh | sh)
-uv tool install --from ~/app/payroll-analizer/packages/payroll-cli payroll-cli
+alias payroll='uv run --project ~/app/payroll-analizer/packages/payroll-cli payroll'   # o eseguito da dentro il repo: uv run payroll
 payroll setup
 ```
-
-`uv tool install` da checkout locale → dopo ogni `payroll update apply` la CLI si
-re-installa da sola dal nuovo checkout (passo finale dell'update). In alternativa, ancora più
-semplice e senza re-install: alias `payroll` → `uv run --project <repo>/packages/payroll-cli payroll`,
-che esegue sempre il codice del checkout corrente (consigliato: zero stato da sincronizzare).
 
 ## 5. Configurazione per macchina: `payroll.local.toml`
 
@@ -203,11 +202,31 @@ modello pull ogni nodo deve poter fare `git fetch` dal repo privato da solo. Opz
 Ogni fase è rilasciabile da sola e collaudabile sul flusso reale prima della successiva
 (la 3 è quella delicata: finché non è collaudata, `release.sh --deploy` resta il fallback).
 
-## 10. Punti aperti
+## 10. Decisioni prese (2026-07-14)
 
-1. Metodo di autenticazione dei nodi verso GitHub (§7 — proposta: deploy key SSH).
-2. `payroll release new` deve anche creare una GitHub Release (via `gh`) con il changelog,
-   così `update check` sui nodi può mostrare le note senza parsare `CHANGELOG.md`? (nice to have)
-3. Installazione CLI host: alias `uv run` (sempre coerente col checkout, consigliato) vs
-   `uv tool install` (comando globale, ma richiede re-install a ogni update)?
-4. Nome comando: `payroll` (proposto) o mantenere `payroll-ingest` anche per l'ops?
+Tutti e quattro i punti erano aperti in questa proposta; l'utente li ha chiusi così:
+
+1. **Autenticazione dei nodi verso GitHub → deploy key SSH read-only.** Implementata in
+   `packages/payroll-cli/src/payroll_cli/deploy_key.py` e in `payroll setup --deploy-key`
+   (disponibile solo per `role=node`; su `role=source` viene saltata con un avviso, perché
+   quella macchina ha già credenziali in scrittura). Genera una coppia ed25519 in
+   `~/.ssh/payroll-deploy` (idempotente: se esiste già non la ricrea), stampa la chiave
+   pubblica da autorizzare a mano su GitHub (repo → Settings → Deploy keys → Add deploy key,
+   **senza** spuntare "Allow write access"), offre di convertire il remote `origin` da HTTPS a
+   SSH, e imposta `core.sshCommand` con `git config --local` — scoped al **solo** repo, non
+   tocca `~/.ssh/config` né altri progetti sulla stessa macchina. L'autorizzazione della chiave
+   su GitHub resta un passo manuale dell'operatore (nessuna azione automatica su un sistema
+   esterno/condiviso).
+2. **`payroll release new` crea anche una GitHub Release via `gh`, con le note del changelog.**
+   Implementato: dopo tag+push, `releaser.create_github_release()` chiama
+   `gh release create <tag> --title <tag> --notes <sezione CHANGELOG appena promossa>`.
+   Non bloccante: se fallisce (es. `gh` non autenticato su quella macchina), logga un
+   avviso ma non invalida il tag/push già avvenuti — restano l'artefatto autorevole.
+   `payroll update check` continua a leggere `CHANGELOG.md` localmente (non richiede `gh`
+   su ogni nodo): la GitHub Release è un arricchimento, non una nuova dipendenza per i nodi.
+3. **Installazione CLI host → `uv run`** (non `uv tool install`): sempre coerente col
+   checkout corrente, zero re-install dopo un `update apply`. Sezione §4 aggiornata di
+   conseguenza.
+4. **Nome comando → `payroll`** (non `payroll-ingest`): resta l'unico entrypoint per il
+   ciclo di vita, distinto da `payroll-ingest` (comando di dominio, invariato, gira solo
+   nel container).
