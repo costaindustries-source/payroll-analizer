@@ -9,11 +9,17 @@ from pathlib import Path
 
 
 def _run(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess:
+    # stdin=DEVNULL: nessuno di questi comandi e' interattivo. Senza, erediterebbe
+    # lo stdin reale del processo padre — se un chiamante concatena una di queste
+    # probe (es. db_env per leggere le credenziali) prima di una vera sessione
+    # interattiva (v. exec_in_db_interactive), la probe intercetterebbe/consumerebbe
+    # l'input destinato alla sessione successiva sullo stesso stdin ereditato.
     return subprocess.run(
         ["docker", "compose", *args],
         cwd=repo_root,
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
 
 
@@ -42,3 +48,35 @@ def db_env(repo_root: Path, var: str) -> str | None:
 def db_is_running(repo_root: Path) -> bool:
     status = ps_status(repo_root, "db")
     return status is not None and "up" in status.lower()
+
+
+def up_db(repo_root: Path) -> subprocess.CompletedProcess:
+    return _run(repo_root, ["up", "-d", "db"])
+
+
+def build_app(repo_root: Path) -> subprocess.CompletedProcess:
+    return _run(repo_root, ["build", "app"])
+
+
+def exec_in_db_binary_stdout(repo_root: Path, args: list[str], dest: Path) -> subprocess.CompletedProcess:
+    """Come exec_in_db, ma per comandi che scrivono dati binari su stdout
+    (es. pg_dump -Fc): text=True corromperebbe l'output."""
+    with dest.open("wb") as f:
+        return subprocess.run(
+            ["docker", "compose", "exec", "-T", "db", *args],
+            cwd=repo_root,
+            stdout=f,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+        )
+
+
+def cp_to_db(repo_root: Path, local_path: Path, container_dest: str) -> subprocess.CompletedProcess:
+    return _run(repo_root, ["cp", str(local_path), f"db:{container_dest}"])
+
+
+def exec_in_db_interactive(repo_root: Path, args: list[str]) -> int:
+    """Per comandi interattivi (es. psql): eredita stdio del terminale, nessun
+    output catturato. Ritorna il returncode."""
+    proc = subprocess.run(["docker", "compose", "exec", "db", *args], cwd=repo_root)
+    return proc.returncode

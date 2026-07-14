@@ -8,23 +8,31 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 - Python 3.12 -> 3.14 (`.python-version`, `pyproject.toml`, immagine base Dockerfile).
 - Postgres 16 -> 17.6 in `docker-compose.yml` (allineato alla versione
   dell'istanza Supabase usata come riferimento). Cambio di major version:
-  richiede la procedura in due fasi di `scripts/upgrade-postgres.sh` su ogni
-  ambiente (v. README).
+  richiede la procedura in due fasi di backup/restore su ogni ambiente (v.
+  README) — vedi sotto per `scripts/upgrade-postgres.sh` -> `payroll db`.
 - Repo riorganizzato come **workspace uv** (`packages/payroll-ingest`,
   `packages/payroll-cli`): `src/`, `alembic/`, `alembic.ini` spostati in
   `packages/payroll-ingest/`. Il `Dockerfile` e l'immagine `app` sono
   invariati nel comportamento (stessi comandi `docker compose run --rm app
   payroll-ingest ...` / `alembic ...`).
+- `scripts/upgrade-postgres.sh` **deprecato**: la logica di backup/restore
+  (idempotenza, verifica TOC, verifica conteggi righe, mai cancella un
+  volume) si è spostata in `payroll_cli/db.py`; lo script resta come thin
+  shim che delega a `payroll db backup`/`payroll db restore` (stessa
+  interfaccia, nessuna logica duplicata). `scripts/release.sh` resta
+  invariato fino alla fase successiva (`payroll release`).
 
 ### Aggiunto
-- `scripts/upgrade-postgres.sh` — backup/restore per migrare i dati a un nuovo
-  volume quando cambia la major version di Postgres, riutilizzabile per
-  qualunque futuro bump (non solo 16->17).
-- CLI operativa **host** `payroll` (`packages/payroll-cli`), prima fase della
-  reingegnerizzazione descritta in `docs/CLI_REDESIGN_PROPOSAL.md`: comandi
-  `version`, `status`, `update check`, `help` (read-only, nessuna azione
-  distruttiva). `scripts/release.sh` e `scripts/upgrade-postgres.sh` restano
-  in vigore fino alle fasi successive.
+- CLI operativa **host** `payroll` (`packages/payroll-cli`), reingegnerizzazione
+  descritta in `docs/CLI_REDESIGN_PROPOSAL.md`:
+  - fase 1 (read-only): `version`, `status`, `update check`, `help` (annidato).
+  - fase 2: `setup` (doctor prerequisiti + wizard config per-macchina in
+    `payroll.local.toml` + generazione `docker-compose.override.yml` solo se
+    serve + bootstrap build/avvio/migration/smoke test), `db backup/restore`,
+    `db migrate`, `db shell` (psql interattivo), `cleanup` (report dry-run di
+    default + `--apply`: residui in `work/`, log oltre retention, backup
+    oltre il numero da conservare; le immagini Docker dangling sono solo
+    riportate, mai rimosse automaticamente).
 
 ## [v0.3.0] - 2026-07-13
 

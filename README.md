@@ -17,11 +17,13 @@ Il progetto è un workspace uv con due pacchetti in `packages/`:
   installato **solo dentro il container** `app`. Invariato nel comportamento.
 - `payroll-cli` — CLI operativa **host** (`payroll`), pensata per girare sulla
   macchina che ospita Docker, non nel container. Copre oggi `version`,
-  `status`, `update check`, `help`; il resto del ciclo di vita (`setup`,
-  `update apply`, `db backup/restore`, `cleanup`, `release`) è pianificato in
-  `docs/CLI_REDESIGN_PROPOSAL.md` e non ancora implementato — per ora restano
-  in vigore `scripts/release.sh` e `scripts/upgrade-postgres.sh` (vedi le
-  sezioni più sotto).
+  `status`, `update check`, `help`, `setup`, `db backup/restore/migrate/shell`,
+  `cleanup`; `update apply`/`rollback`/`release` sono pianificati in
+  `docs/CLI_REDESIGN_PROPOSAL.md` e non ancora implementati — per ora resta in
+  vigore `scripts/release.sh` per il deploy (vedi le sezioni più sotto).
+  `scripts/upgrade-postgres.sh` è deprecato: e' un thin shim che delega a
+  `payroll db backup`/`payroll db restore` (stessa interfaccia, nessuna logica
+  duplicata).
 
 ```bash
 uv sync --all-packages                    # installa entrambi i pacchetti in .venv/
@@ -30,11 +32,23 @@ uv run payroll version                    # tag/commit repo, alembic current/hea
 uv run payroll status                     # container, documenti per stato, input/ in coda, disco
 uv run payroll update check                # confronta il tag locale con l'ultimo pubblicato su GitHub
 uv run payroll help update check           # help di un sottocomando annidato
+uv run payroll setup --check               # solo verifica prerequisiti (docker/compose/git/uv/disco/UID)
+uv run payroll setup --bootstrap           # wizard configurazione + build/avvio/migration/smoke test
+uv run payroll db backup                   # dump verificato + snapshot conteggi righe (backups/)
+uv run payroll db restore [dump]           # idempotente: no-op se lo schema esiste gia'
+uv run payroll db migrate [revision]       # alembic upgrade (default: head)
+uv run payroll db shell                    # psql interattivo nel container db
+uv run payroll cleanup                     # report (dry-run) di work/logs/backups oltre soglia
+uv run payroll cleanup --apply             # rimuove gli item elencati (con conferma)
 ```
 
 `payroll` risale da solo alla radice del repo risalendo dalla cwd (cerca
 `docker-compose.yml` + `packages/payroll-cli/pyproject.toml`); se lanciato da
 fuori il checkout, imposta `PAYROLL_REPO_ROOT=/percorso/del/repo`.
+`payroll setup` scrive `payroll.local.toml` (non versionato: nome macchina,
+ruolo `source`/`node`, porta DB, retention log, backup da conservare) e
+rigenera `docker-compose.override.yml` solo se la porta scelta differisce dal
+default 5432 (non sovrascrive mai un override esistente).
 
 ## Setup iniziale (una tantum)
 
@@ -95,9 +109,9 @@ docker compose down         # ferma e rimuove i container (volume dati NON tocca
 ## Database
 
 ```bash
-docker compose exec db psql -U payroll -d payroll                              # shell psql
+uv run payroll db shell                                                         # shell psql (via CLI)
 docker compose exec db psql -U payroll -d payroll -c "select count(*) from payroll_document;"
-docker compose exec db pg_dump -U payroll payroll > backup.sql                 # backup rapido
+uv run payroll db backup                                                        # backup verificato (via CLI)
 ```
 
 Client esterno (DBeaver/SQLTools): `localhost:5432`, utente/password/db `payroll`.
@@ -110,9 +124,9 @@ volume dati, quindi va migrato su **ogni** macchina che aggiorna il checkout,
 non solo su quella dove il bump e' stato deciso. Procedura in due fasi:
 
 ```bash
-scripts/upgrade-postgres.sh backup     # PRIMA di aggiornare il checkout, col vecchio db in esecuzione
-git pull                               # (o checkout del tag) -> docker-compose.yml ora punta alla nuova image/volume
-scripts/upgrade-postgres.sh restore    # DOPO, ripristina i dati nel nuovo volume
+uv run payroll db backup     # PRIMA di aggiornare il checkout, col vecchio db in esecuzione
+git pull                     # (o checkout del tag) -> docker-compose.yml ora punta alla nuova image/volume
+uv run payroll db restore    # DOPO, ripristina i dati nel nuovo volume
 ```
 
 `restore` senza argomenti usa automaticamente il backup piu' recente in
@@ -120,6 +134,10 @@ scripts/upgrade-postgres.sh restore    # DOPO, ripristina i dati nel nuovo volum
 uno schema. Il volume precedente non viene mai cancellato automaticamente:
 resta come rete di sicurezza, va rimosso a mano (`docker volume ls` / `docker
 volume rm`) quando si e' certi che la migrazione sia andata a buon fine.
+
+`scripts/upgrade-postgres.sh backup|restore` resta disponibile come alias
+deprecato (delega a `payroll db backup`/`payroll db restore`, stessa
+interfaccia) per chi ha ancora l'abitudine digitata.
 
 ## Migrations (Alembic)
 

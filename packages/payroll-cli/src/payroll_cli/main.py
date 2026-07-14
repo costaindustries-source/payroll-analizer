@@ -4,8 +4,11 @@ import typer
 import typer.core
 
 from payroll_cli import context as context_module
+from payroll_cli.commands import cleanup as cleanup_cmd
+from payroll_cli.commands import setup as setup_cmd
 from payroll_cli.commands import status as status_cmd
 from payroll_cli.commands import version as version_cmd
+from payroll_cli.commands.db import db_app
 from payroll_cli.commands.update import update_app
 
 app = typer.Typer(
@@ -13,6 +16,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(update_app, name="update")
+app.add_typer(db_app, name="db")
 
 
 @app.callback()
@@ -36,6 +40,41 @@ def version(ctx: typer.Context) -> None:
 def status(ctx: typer.Context) -> None:
     """Salute della macchina: container, DB, migrazioni, documenti, disco, config."""
     status_cmd.run(ctx.obj)
+
+
+@app.command()
+def cleanup(
+    ctx: typer.Context,
+    apply: bool = typer.Option(False, "--apply", help="Rimuove gli item elencati (default: solo report)."),
+) -> None:
+    """Report (default) o rimozione di work/logs/backups oltre le soglie configurate."""
+    cleanup_cmd.run(ctx.obj, apply_changes=apply)
+
+
+@app.command()
+def setup(
+    ctx: typer.Context,
+    check: bool = typer.Option(False, "--check", help="Solo verifica prerequisiti, nessuna modifica."),
+    name: str = typer.Option(None, "--name", help="Nome macchina."),
+    role: str = typer.Option(None, "--role", help="Ruolo: 'source' (solo Ubuntu/dev) o 'node'."),
+    db_port: int = typer.Option(None, "--db-port", help="Porta host pubblicata per Postgres."),
+    logs_retention_days: int = typer.Option(None, "--logs-retention-days"),
+    backups_keep: int = typer.Option(None, "--backups-keep"),
+    bootstrap: bool = typer.Option(
+        False, "--bootstrap", help="Dopo la configurazione: build immagine + avvio DB + migration (+ smoke test)."
+    ),
+) -> None:
+    """Prima installazione: verifica prerequisiti, scrive la config per-macchina, opzionalmente fa il bootstrap."""
+    setup_cmd.run(
+        ctx.obj,
+        check_only=check,
+        name=name,
+        role=role,
+        db_port=db_port,
+        logs_retention_days=logs_retention_days,
+        backups_keep=backups_keep,
+        do_bootstrap=bootstrap,
+    )
 
 
 @app.command("help")
