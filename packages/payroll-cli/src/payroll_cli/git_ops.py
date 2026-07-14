@@ -25,6 +25,7 @@ def _run(repo_root: Path, args: list[str]) -> GitResult:
         cwd=repo_root,
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
     )
     return GitResult(proc.returncode, proc.stdout.strip(), proc.stderr.strip())
 
@@ -67,3 +68,23 @@ def diff_file_between(repo_root: Path, ref_a: str, ref_b: str, file_path: str) -
     """Diff testuale di un file tra due ref (tag/commit); stringa vuota se identico."""
     result = _run(repo_root, ["diff", f"{ref_a}..{ref_b}", "--", file_path])
     return result.stdout
+
+
+def list_remote_tags(repo_root: Path, remote: str = "origin") -> list[str]:
+    result = _run(repo_root, ["ls-remote", "--tags", "--refs", remote])
+    tags = []
+    for line in result.stdout.splitlines():
+        if "\t" not in line:
+            continue
+        ref = line.split("\t", 1)[1]
+        tags.append(ref.removeprefix("refs/tags/"))
+    return tags
+
+
+def tag_date(repo_root: Path, tag: str) -> str:
+    return _run(repo_root, ["log", "-1", "--format=%ad", "--date=short", tag]).stdout
+
+
+def tag_subject(repo_root: Path, tag: str) -> str:
+    """Prima riga del messaggio del tag annotato (vuota se il tag non e' annotato)."""
+    return _run(repo_root, ["tag", "-l", "--format=%(contents:subject)", tag]).stdout

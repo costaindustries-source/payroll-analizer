@@ -3,6 +3,12 @@
 Voci append-only, scritte automaticamente da `scripts/release.sh` a ogni
 rilascio riuscito su Debian. Non modificare a mano le voci passate.
 
+> **Nota (2026-07-14):** `payroll release new` (v. `docs/CLI_REDESIGN_PROPOSAL.md`)
+> non scrive qui — nel modello pull non esiste più un "deploy su Debian"
+> lanciato da Ubuntu di cui tenere traccia centralmente: ogni macchina logga
+> i propri aggiornamenti in `logs/updates.log` locale. Questo file resta
+> attivo solo finché `scripts/release.sh --deploy` resta in uso.
+
 ## v0.1.2 — 2026-07-13T13:02:15Z
 
 fix: smoke test nell immagine Docker (mount ad-hoc non funzionava)

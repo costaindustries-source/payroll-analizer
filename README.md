@@ -18,13 +18,16 @@ Il progetto è un workspace uv con due pacchetti in `packages/`:
 - `payroll-cli` — CLI operativa **host** (`payroll`), pensata per girare sulla
   macchina che ospita Docker, non nel container. Copre oggi `version`,
   `status`, `update check/apply`, `rollback`, `help`, `setup`,
-  `db backup/restore/migrate/shell`, `cleanup`; `payroll release` (modello
-  pull: pubblica solo il tag, il deploy lo fa ogni nodo con `update apply`) è
-  pianificato in `docs/CLI_REDESIGN_PROPOSAL.md` — per ora il deploy su
-  Debian resta `scripts/release.sh --deploy`/`--rollback` (vedi le sezioni
-  più sotto). `scripts/upgrade-postgres.sh` è deprecato: e' un thin shim che
-  delega a `payroll db backup`/`payroll db restore` (stessa interfaccia,
-  nessuna logica duplicata).
+  `db backup/restore/migrate/shell`, `cleanup`, `release new/list`. Il modello
+  è **pull**: `release new` (solo sulla macchina `role=source`, v. `payroll
+  setup`) pubblica soltanto un tag su GitHub — non deploya nulla — e ogni
+  macchina installata si aggiorna da sola con `update apply`.
+  `scripts/release.sh --deploy`/`--rollback` restano per ora l'unico modo per
+  promuovere davvero il codice su Debian (v. sezione dedicata più sotto):
+  finché quella parte del flusso non è stata validata su un aggiornamento
+  reale con `payroll update apply`, non va rimossa. `scripts/upgrade-postgres.sh`
+  è deprecato: e' un thin shim che delega a `payroll db backup`/`payroll db
+  restore` (stessa interfaccia, nessuna logica duplicata).
 
 ```bash
 uv sync --all-packages                    # installa entrambi i pacchetti in .venv/
@@ -44,6 +47,8 @@ uv run payroll db migrate [revision]       # alembic upgrade (default: head)
 uv run payroll db shell                    # psql interattivo nel container db
 uv run payroll cleanup                     # report (dry-run) di work/logs/backups oltre soglia
 uv run payroll cleanup --apply             # rimuove gli item elencati (con conferma)
+uv run payroll release list                # storia dei tag pubblicati (fetch + confronto con origin)
+uv run payroll release new vX.Y.Z [-m msg] # solo role=source: preflight+smoke test+CHANGELOG+tag+push
 ```
 
 `payroll` risale da solo alla radice del repo risalendo dalla cwd (cerca
@@ -66,6 +71,16 @@ avviato l'aggiornamento. Se lo smoke test fallisce, propone il rollback
 automatico al tag precedente (`payroll rollback`, che fa solo checkout +
 rebuild immagine: non tocca mai dati o volumi). Traccia ogni esito in
 `logs/updates.log` (locale, non versionato).
+
+`payroll release new` e' riservato alla macchina configurata con `role=source`
+(Ubuntu/dev). Preflight (branch `main`, working tree pulito, tag non
+esistente) -> smoke test locale **obbligatorio** sui campioni di
+`docs/payroll-test/` (a differenza di `setup`/`update apply`, qui non viene
+mai saltato) -> promuove la sezione `## [Non rilasciato]` di `CHANGELOG.md` a
+`## [vX.Y.Z] - <data>` (lasciandone una vuota in cima per il prossimo giro) e
+la committa -> chiede conferma esplicita -> crea il tag annotato e pusha
+`main` + il tag. **Non deploya nulla**: la promozione sulle macchine resta
+compito di ciascun nodo con `payroll update apply`.
 
 ## Setup iniziale (una tantum)
 
@@ -186,11 +201,24 @@ uv run python scripts/smoke_test.py
 
 ## Rilascio (Ubuntu -> GitHub -> Debian prod)
 
+Due comandi coesistono, con responsabilità diverse (v. `docs/CLI_REDESIGN_PROPOSAL.md`):
+
 ```bash
+uv run payroll release new vX.Y.Z [-m msg]   # pubblica il tag su GitHub (solo su Ubuntu, role=source). Nessun deploy.
+uv run payroll update apply                   # su OGNI macchina (Debian inclusa): si aggiorna da sola all'ultimo tag
+uv run payroll rollback vX.Y.Z                # su una macchina: torna a un tag precedente
+
+# Ancora in vigore per il deploy verso Debian finche' il flusso sopra non e' collaudato dal vivo:
 scripts/release.sh vX.Y.Z          # rilascio completo: smoke test, tag+push, deploy Debian (con gate di conferma), smoke test post-deploy, log
 scripts/release.sh --deploy vX.Y.Z # riprende solo il deploy su Debian di un tag già pushato
 scripts/release.sh --rollback vX.Y.Z   # riporta Debian a un tag precedente
 ```
+
+`payroll release new` sostituisce solo la parte "tag + push" di
+`scripts/release.sh` (preflight, smoke test, CHANGELOG, tag, push) — non
+deploya. Finché Debian non aggiorna se stesso con `payroll update apply` in
+un caso reale, `scripts/release.sh --deploy`/`--rollback` restano il modo
+per portare davvero il codice sull'ambiente di produzione.
 
 SemVer: **patch** (`v0.1.x`) fix senza cambio schema, **minor** (`v0.2.0`)
 nuove funzionalità, **major** (`v1.0.0`) cambio schema DB non retrocompatibile.

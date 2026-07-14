@@ -1,5 +1,17 @@
 # Processo di rilascio
 
+> **Nota (2026-07-14):** questo documento descrive il modello storico
+> "push" (Ubuntu spinge il deploy su Debian via `wsl.exe`), ancora in vigore
+> per il deploy reale. Sta convivendo con la CLI `payroll`
+> (`packages/payroll-cli`, v. `docs/CLI_REDESIGN_PROPOSAL.md`), che introduce
+> un modello **pull**: `payroll release new` pubblica solo il tag (sostituisce
+> la parte "smoke test + tag + push" di `scripts/release.sh`, non il deploy),
+> e ogni macchina si aggiornerebbe da sola con `payroll update apply`. Questo
+> documento verrà riscritto attorno al modello pull solo dopo che
+> `update apply` sarà stato collaudato su un aggiornamento reale di Debian —
+> fino ad allora `scripts/release.sh --deploy`/`--rollback` restano l'unico
+> modo per promuovere il codice sull'ambiente reale.
+
 ## Modello degli ambienti
 
 | Ambiente | Ruolo | Dove | Come esegue |

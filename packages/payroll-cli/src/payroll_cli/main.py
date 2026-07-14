@@ -10,6 +10,7 @@ from payroll_cli.commands import setup as setup_cmd
 from payroll_cli.commands import status as status_cmd
 from payroll_cli.commands import version as version_cmd
 from payroll_cli.commands.db import db_app
+from payroll_cli.commands.release import release_app
 from payroll_cli.commands.update import update_app
 
 app = typer.Typer(
@@ -18,6 +19,7 @@ app = typer.Typer(
 )
 app.add_typer(update_app, name="update")
 app.add_typer(db_app, name="db")
+app.add_typer(release_app, name="release")
 
 
 @app.callback()

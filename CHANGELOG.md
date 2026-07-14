@@ -20,7 +20,10 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
   volume) si è spostata in `payroll_cli/db.py`; lo script resta come thin
   shim che delega a `payroll db backup`/`payroll db restore` (stessa
   interfaccia, nessuna logica duplicata). `scripts/release.sh` resta
-  invariato fino alla fase successiva (`payroll release`).
+  invariato per il deploy su Debian (`--deploy`/`--rollback`): la sua parte
+  di pubblicazione tag è ora coperta da `payroll release new`, ma il deploy
+  vero e proprio resta lì finché `payroll update apply` non è stato
+  collaudato su un aggiornamento reale.
 
 ### Aggiunto
 - CLI operativa **host** `payroll` (`packages/payroll-cli`), reingegnerizzazione
@@ -41,6 +44,14 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
     migration/smoke test, propone rollback automatico su fallimento) e
     `rollback <tag>` (checkout + rebuild immagine, non tocca mai dati/volumi).
     Traccia gli esiti in `logs/updates.log` locale.
+  - fase 4: `release new <vX.Y.Z> [-m msg]` (solo macchina `role=source`):
+    preflight (branch `main`, working tree pulito, tag non esistente) ->
+    smoke test locale **obbligatorio** (a differenza di `setup`/`update
+    apply`, qui non viene mai saltato) -> promuove `## [Non rilasciato]` di
+    `CHANGELOG.md` a `## [vX.Y.Z] - <data>` e la committa -> conferma
+    esplicita -> tag annotato + push. Nessun deploy: la promozione resta
+    compito di ogni nodo con `update apply`. `release list` mostra la storia
+    dei tag pubblicati (locale + verifica su origin).
 
 ## [v0.3.0] - 2026-07-13
 
