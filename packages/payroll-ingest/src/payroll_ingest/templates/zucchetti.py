@@ -44,6 +44,17 @@ _CODE_RE = re.compile(r"^[A-Z]{0,2}\d{4,6}$")
 # Rumore di estrazione/OCR: va scartato, non salvato ne' come nota ne' come
 # anomalia.
 _NOISE_ROW_RE = re.compile(r"^\d{1,2}$")
+# Etichette di titolo-sezione stampate come riga a se stante, senza alcun dato
+# numerico accanto, sui cedolini a piu' pagine dove i valori della sezione
+# CONGUAGLIO/PROGRESSIVI/T.F.R. sono su un'altra pagina (v. issue GH #9/#11,
+# osservato su 202212.pdf): a differenza di una vera riga di continuazione
+# (es. "MBO", "Riferimento anno 2020/2021", issue GH #7/#8), qui non c'e'
+# alcun contenuto informativo da agganciare alla voce precedente, e' puro
+# boilerplate di layout ripetuto identico su ogni cedolino (anche quelli senza
+# alcun conguaglio). Confronto per uguaglianza esatta (non substring) sul testo
+# normalizzato dell'INTERA riga, cosi' da non rischiare di escludere una riga
+# dati legittima che contenga una di queste parole assieme ad altro.
+_BARE_SECTION_LABELS = {normalize_label(t) for t in ("CONGUAGLIO", "PROGRESSIVI", "T.F.R.")}
 _COMPANY_CODE_ROW_RE = re.compile(r"^(\d{6})\s+([A-Z].{5,})$")
 _ADDRESS_ROW_RE = re.compile(r"^(.*?)\s+Aut\.\s*(\S+)$")
 _CAP_CITY_ROW_RE = re.compile(r"^(\d{5})\s+([A-Z].+\([A-Z]{2}\))$")
@@ -160,6 +171,112 @@ def _split_amount_zone(words: list[Word]) -> tuple[Decimal | None, Decimal | Non
             return abs(value), None
         return None, value
     return None, None
+
+
+# Tabelle ufficiali del check-digit del codice fiscale italiano (16esimo
+# carattere, calcolato dai primi 15 con pesi diversi per posizione dispari/pari,
+# 1-indexed). A differenza dell'IBAN (dove la posizione del carattere corrotto e'
+# strutturalmente nota: il CIN e' sempre una lettera) qui non c'e' alcun modo
+# strutturale di sapere quale carattere sia stato eventualmente corrotto dal
+# glitch di font, quindi non tentiamo alcuna correzione automatica (rischioso
+# per un identificativo fiscale/legale, a differenza dell'IBAN o dei codici
+# causale): ci limitiamo a rilevare che il check-digit non torna, v.
+# _codice_fiscale_checksum_valido, issue GH #10.
+_CF_ODD_VALUES = {
+    "0": 1,
+    "1": 0,
+    "2": 5,
+    "3": 7,
+    "4": 9,
+    "5": 13,
+    "6": 15,
+    "7": 17,
+    "8": 19,
+    "9": 21,
+    "A": 1,
+    "B": 0,
+    "C": 5,
+    "D": 7,
+    "E": 9,
+    "F": 13,
+    "G": 15,
+    "H": 17,
+    "I": 19,
+    "J": 21,
+    "K": 2,
+    "L": 4,
+    "M": 18,
+    "N": 20,
+    "O": 11,
+    "P": 3,
+    "Q": 6,
+    "R": 8,
+    "S": 12,
+    "T": 14,
+    "U": 16,
+    "V": 10,
+    "W": 22,
+    "X": 25,
+    "Y": 24,
+    "Z": 23,
+}
+_CF_EVEN_VALUES = {
+    "0": 0,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "A": 0,
+    "B": 1,
+    "C": 2,
+    "D": 3,
+    "E": 4,
+    "F": 5,
+    "G": 6,
+    "H": 7,
+    "I": 8,
+    "J": 9,
+    "K": 10,
+    "L": 11,
+    "M": 12,
+    "N": 13,
+    "O": 14,
+    "P": 15,
+    "Q": 16,
+    "R": 17,
+    "S": 18,
+    "T": 19,
+    "U": 20,
+    "V": 21,
+    "W": 22,
+    "X": 23,
+    "Y": 24,
+    "Z": 25,
+}
+_CF_REMAINDER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _codice_fiscale_checksum_valido(cf: str) -> bool:
+    """Verifica il check-digit ufficiale del codice fiscale italiano. Il
+    formato (_EMPLOYEE_ROW_RE) vincola gia' quali posizioni sono lettere e
+    quali cifre, ma non protegge da una lettera scambiata con un'altra lettera
+    plausibile per lo stesso glitch di font che colpisce altri campi dello
+    stesso documento (v. issue GH #4): il check-digit e' l'unico segnale
+    indipendente disponibile."""
+    if len(cf) != 16:
+        return False
+    try:
+        total = sum(
+            _CF_ODD_VALUES[ch] if (idx + 1) % 2 == 1 else _CF_EVEN_VALUES[ch] for idx, ch in enumerate(cf[:15])
+        )
+    except KeyError:
+        return False
+    return _CF_REMAINDER_LETTERS[total % 26] == cf[15]
 
 
 def _parse_header(rows: list[Row]) -> tuple[CompanyDTO, EmployeeDTO, str | None, str | None]:
@@ -420,6 +537,12 @@ def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str],
         elif row.text.strip():
             stripped = row.text.strip()
             if _NOISE_ROW_RE.match(stripped):
+                continue
+            if normalize_label(stripped) in _BARE_SECTION_LABELS:
+                # Titolo di sezione senza alcun dato accanto (v.
+                # _BARE_SECTION_LABELS, issue GH #11): non e' una riga di
+                # continuazione della voce precedente, va scartato come il
+                # rumore sopra, non agganciato ne' segnalato come non mappato.
                 continue
             # Zucchetti stampa a volte una riga di continuazione senza codice
             # causale proprio, sotto la voce a cui si riferisce (es. "Riferimento
@@ -735,6 +858,27 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
     all_rows = [r for p in doc.pages for r in p.rows]
 
     company, employee, hire_date_str, tipo_costo_text = _parse_header(rows)
+
+    # Un glitch di font puo' corrompere una lettera del codice fiscale in
+    # un'altra lettera plausibile (osservato su 202201.pdf: 'T' reso come 'I',
+    # v. issue GH #10) senza che il formato (_EMPLOYEE_ROW_RE) se ne accorga.
+    # A differenza dell'IBAN, qui non tentiamo una correzione automatica: non
+    # c'e' un modo strutturale di sapere quale carattere sia stato corrotto (il
+    # CIN dell'IBAN ha una posizione nota che deve essere una lettera; qui ogni
+    # posizione del blocco lettere e' ugualmente plausibile) e un identificativo
+    # fiscale/legale sbagliato per un falso positivo di correzione avrebbe
+    # conseguenze piu' gravi di un IBAN da verificare a mano. Trattiamo quindi
+    # il documento come se il codice fiscale non fosse stato riconosciuto (non
+    # crea ne' collega alcun Employee, v. repository.save_document), cosi' non
+    # si frammenta silenziosamente l'identita' della stessa persona su due
+    # record employee distinti.
+    codice_fiscale_originale = employee.codice_fiscale
+    codice_fiscale_non_valido = bool(employee.codice_fiscale) and not _codice_fiscale_checksum_valido(
+        employee.codice_fiscale
+    )
+    if codice_fiscale_non_valido:
+        employee.codice_fiscale = ""
+
     pay_lines, unmapped_rows, causale_corrections = _extract_causale_rows(rows)
     tax = _extract_tax(pay_lines, all_rows)
     tfr = _extract_tfr(all_rows)
@@ -783,7 +927,21 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
         hire_date=hire_date,
     )
 
-    if not employee.codice_fiscale:
+    if codice_fiscale_non_valido:
+        dto.anomalies.append(
+            AnomalyDTO(
+                tipo="codice_fiscale_non_valido",
+                severita=AnomalySeverity.ERROR,
+                messaggio=(
+                    f"Codice fiscale {codice_fiscale_originale!r} non supera il controllo del "
+                    "check-digit ufficiale (probabile glitch font su una lettera, v. issue GH #10) "
+                    "- trattato come non riconosciuto per non creare un employee duplicato, "
+                    "verificare manualmente"
+                ),
+                campo="employee.codice_fiscale",
+            )
+        )
+    elif not employee.codice_fiscale:
         dto.anomalies.append(
             AnomalyDTO(
                 tipo="header_incompleto",
