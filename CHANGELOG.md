@@ -33,6 +33,14 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
     default + `--apply`: residui in `work/`, log oltre retention, backup
     oltre il numero da conservare; le immagini Docker dangling sono solo
     riportate, mai rimosse automaticamente).
+  - fase 3: `update apply` (modello pull — v. `docs/CLI_REDESIGN_PROPOSAL.md`
+    §6: blocca su working tree sporco, backup automatico se il bump cambia il
+    volume Postgres rilevato via diff di `docker-compose.yml` tra tag, resume
+    post-checkout eseguito dal codice del *nuovo* tag — non da quello ancora
+    in memoria nel processo che ha avviato l'update — build/restore/
+    migration/smoke test, propone rollback automatico su fallimento) e
+    `rollback <tag>` (checkout + rebuild immagine, non tocca mai dati/volumi).
+    Traccia gli esiti in `logs/updates.log` locale.
 
 ## [v0.3.0] - 2026-07-13
 

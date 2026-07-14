@@ -4,6 +4,7 @@ import typer
 import typer.core
 
 from payroll_cli import context as context_module
+from payroll_cli import git_ops, updater
 from payroll_cli.commands import cleanup as cleanup_cmd
 from payroll_cli.commands import setup as setup_cmd
 from payroll_cli.commands import status as status_cmd
@@ -75,6 +76,29 @@ def setup(
         backups_keep=backups_keep,
         do_bootstrap=bootstrap,
     )
+
+
+@app.command()
+def rollback(
+    ctx: typer.Context,
+    tag: str = typer.Argument(..., help="Tag a cui tornare (deve esistere localmente)."),
+) -> None:
+    """Torna a un tag precedente: checkout + rebuild immagine. Non tocca dati/volumi."""
+    app_ctx = ctx.obj
+    repo_root = app_ctx.repo_root
+    local_tags = git_ops.list_local_tags(repo_root)
+    if tag not in local_tags:
+        typer.echo(f"ERRORE: tag '{tag}' non trovato localmente (esegui prima 'payroll update check').", err=True)
+        raise typer.Exit(code=1)
+    if not typer.confirm(f"Riportare il checkout a {tag} e ricostruire l'immagine Docker?"):
+        typer.echo("Interrotto su richiesta.")
+        raise typer.Exit(code=0)
+    try:
+        updater.do_rollback(repo_root, tag, log=typer.echo)
+    except updater.UpdateError as exc:
+        typer.echo(f"ERRORE: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"\nRollback a {tag} completato. Verifica manualmente (es. 'payroll status') se necessario.")
 
 
 @app.command("help")

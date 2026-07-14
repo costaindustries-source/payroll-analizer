@@ -17,13 +17,14 @@ Il progetto è un workspace uv con due pacchetti in `packages/`:
   installato **solo dentro il container** `app`. Invariato nel comportamento.
 - `payroll-cli` — CLI operativa **host** (`payroll`), pensata per girare sulla
   macchina che ospita Docker, non nel container. Copre oggi `version`,
-  `status`, `update check`, `help`, `setup`, `db backup/restore/migrate/shell`,
-  `cleanup`; `update apply`/`rollback`/`release` sono pianificati in
-  `docs/CLI_REDESIGN_PROPOSAL.md` e non ancora implementati — per ora resta in
-  vigore `scripts/release.sh` per il deploy (vedi le sezioni più sotto).
-  `scripts/upgrade-postgres.sh` è deprecato: e' un thin shim che delega a
-  `payroll db backup`/`payroll db restore` (stessa interfaccia, nessuna logica
-  duplicata).
+  `status`, `update check/apply`, `rollback`, `help`, `setup`,
+  `db backup/restore/migrate/shell`, `cleanup`; `payroll release` (modello
+  pull: pubblica solo il tag, il deploy lo fa ogni nodo con `update apply`) è
+  pianificato in `docs/CLI_REDESIGN_PROPOSAL.md` — per ora il deploy su
+  Debian resta `scripts/release.sh --deploy`/`--rollback` (vedi le sezioni
+  più sotto). `scripts/upgrade-postgres.sh` è deprecato: e' un thin shim che
+  delega a `payroll db backup`/`payroll db restore` (stessa interfaccia,
+  nessuna logica duplicata).
 
 ```bash
 uv sync --all-packages                    # installa entrambi i pacchetti in .venv/
@@ -31,6 +32,9 @@ uv run payroll --help                     # CLI operativa (host)
 uv run payroll version                    # tag/commit repo, alembic current/head, versione Postgres
 uv run payroll status                     # container, documenti per stato, input/ in coda, disco
 uv run payroll update check                # confronta il tag locale con l'ultimo pubblicato su GitHub
+uv run payroll update apply [--to vX.Y.Z]  # checkout al tag piu' recente (o --to), backup automatico se
+                                            # cambia il volume Postgres, poi build/restore/migration/smoke test
+uv run payroll rollback vX.Y.Z             # torna a un tag precedente: checkout + rebuild (non tocca dati)
 uv run payroll help update check           # help di un sottocomando annidato
 uv run payroll setup --check               # solo verifica prerequisiti (docker/compose/git/uv/disco/UID)
 uv run payroll setup --bootstrap           # wizard configurazione + build/avvio/migration/smoke test
@@ -49,6 +53,19 @@ fuori il checkout, imposta `PAYROLL_REPO_ROOT=/percorso/del/repo`.
 ruolo `source`/`node`, porta DB, retention log, backup da conservare) e
 rigenera `docker-compose.override.yml` solo se la porta scelta differisce dal
 default 5432 (non sovrascrive mai un override esistente).
+
+`payroll update apply` blocca se il working tree non e' pulito, rifiuta di
+procedere se sei gia' sull'ultimo tag, e chiede sempre conferma esplicita
+prima del checkout. Se il bump cambia il nome del volume dati Postgres (v.
+"Aggiornamento major version di PostgreSQL" più sotto) esegue da solo un
+backup prima del checkout — non serve più ricordarsi l'ordine backup ->
+checkout -> restore a mano. Dopo il checkout, il resto della sequenza
+(build immagine, avvio db, restore, migration, smoke test) gira col codice
+del *nuovo* tag appena installato, non con quello del processo che ha
+avviato l'aggiornamento. Se lo smoke test fallisce, propone il rollback
+automatico al tag precedente (`payroll rollback`, che fa solo checkout +
+rebuild immagine: non tocca mai dati o volumi). Traccia ogni esito in
+`logs/updates.log` (locale, non versionato).
 
 ## Setup iniziale (una tantum)
 
