@@ -228,6 +228,8 @@ Output atteso: una lista di controlli, tutti con un segno di spunta. I controlli
 
 Se qualcosa risulta bloccante, il comando te lo segnala chiaramente con il motivo: torna al punto 2 e sistemalo prima di proseguire.
 
+> Se il progetto è già stato aggiornato da qualcun altro dopo che hai clonato il repository (es. un fix appena pubblicato), aggiungi `--pull` per allineare il codice prima dei controlli: `uv run payroll setup --check --pull` (fa un `git pull` sicuro — si ferma da solo se hai modifiche locali non salvate).
+
 ---
 
 ## 5. Configurazione guidata (`payroll setup`)

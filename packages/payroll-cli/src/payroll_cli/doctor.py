@@ -50,11 +50,19 @@ def run_checks(repo_root: Path) -> list[CheckResult]:
     free_gb = usage.free / (1024**3)
     checks.append(CheckResult("spazio disco", free_gb >= _MIN_FREE_GB, f"{free_gb:.1f} GiB liberi"))
 
-    uid, gid = os.getuid(), os.getgid()
-    uid_ok = uid == 1000 and gid == 1000
-    detail = f"{uid}:{gid}"
-    if not uid_ok:
-        detail += " (atteso 1000:1000 — altrimenti build con --build-arg APP_UID/APP_GID)"
-    checks.append(CheckResult("UID/GID host", uid_ok, detail, blocking=False))
+    # os.getuid()/os.getgid() sono API POSIX, assenti su Windows (v. issue
+    # riscontrata avviando 'payroll setup' su Windows nativo): il controllo
+    # UID/GID riguarda solo la proprieta' dei file nei bind mount su Linux/WSL,
+    # non ha equivalente su Windows, quindi li' va semplicemente saltato
+    # invece di far fallire l'intero comando con un AttributeError.
+    if hasattr(os, "getuid"):
+        uid, gid = os.getuid(), os.getgid()
+        uid_ok = uid == 1000 and gid == 1000
+        detail = f"{uid}:{gid}"
+        if not uid_ok:
+            detail += " (atteso 1000:1000 — altrimenti build con --build-arg APP_UID/APP_GID)"
+        checks.append(CheckResult("UID/GID host", uid_ok, detail, blocking=False))
+    else:
+        checks.append(CheckResult("UID/GID host", True, "non applicabile su Windows", blocking=False))
 
     return checks

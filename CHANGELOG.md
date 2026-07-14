@@ -4,6 +4,36 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+### Fix
+- `payroll setup` crashava con `AttributeError: module 'os' has no attribute
+  'getuid'` su Windows nativo: il controllo prerequisiti UID/GID (rilevante
+  solo per i bind mount su Linux/WSL) ora viene saltato su Windows invece di
+  interrompere l'intero comando.
+- Cedolini a più pagine (conguaglio annuale allegato nello stesso PDF): totali
+  (netto, IBAN, competenze/trattenute) persi o silenziosamente sbagliati
+  perché l'estrazione guardava solo la prima pagina — ora considera tutte le
+  pagine (issue #9).
+- `imponibile_inps` sempre `NULL` su ogni documento: il valore era sulla riga
+  successiva all'etichetta "PROGRESSIVI", non su quella dell'etichetta stessa
+  (issue #13); `imponibile_inail` prendeva per errore un valore semanticamente
+  diverso dalla stessa causa.
+- `TOTALE TRATTENUTE` letto dalla colonna sbagliata quando due blocchi si
+  fondevano sulla stessa riga clusterizzata (fallback OCR su `07.pdf`/`08.pdf`,
+  issue #12).
+- Glitch di font poteva corrompere una lettera del codice fiscale, creando un
+  `employee` duplicato per la stessa persona: ora il check-digit ufficiale
+  viene validato, e un CF che non lo supera è trattato come non riconosciuto
+  invece di generare un'identità fantasma (issue #10).
+- Etichette di sezione vuote (`CONGUAGLIO`/`PROGRESSIVI`/`T.F.R.`, tipiche dei
+  cedolini a più pagine) venivano agganciate come nota di continuazione a una
+  voce non correlata (issue #11).
+
+### Aggiunto
+- `payroll setup --pull`: `git pull --ff-only` sul branch corrente prima del
+  resto del comando, saltato automaticamente se il working tree è sporco o se
+  la macchina è su un tag di release (in quel caso indica di usare `payroll
+  update apply`).
+
 ### Modificato
 - Python 3.12 -> 3.14 (`.python-version`, `pyproject.toml`, immagine base Dockerfile).
 - Postgres 16 -> 17.6 in `docker-compose.yml` (allineato alla versione

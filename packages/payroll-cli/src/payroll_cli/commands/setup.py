@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from payroll_cli import deploy_key as deploy_key_module
 from payroll_cli import doctor as doctor_module
+from payroll_cli import git_ops
 from payroll_cli import setup_wizard
 from payroll_cli.context import Context, MachineConfig
 
@@ -18,6 +21,30 @@ def _print_checks(checks: list[doctor_module.CheckResult]) -> bool:
     return all_blocking_ok
 
 
+def _run_pull(repo_root: Path) -> None:
+    typer.echo("== Aggiornamento codice (git pull) ==")
+    if git_ops.is_dirty(repo_root):
+        typer.echo(
+            "Working tree non pulito: ci sono modifiche locali non salvate. "
+            "Pull saltato per non rischiare di perderle (fai prima commit/stash, poi riprova con --pull)."
+        )
+        return
+    tag = git_ops.exact_tag_on_head(repo_root)
+    if tag:
+        typer.echo(
+            f"Questa macchina e' su un tag di release ({tag}), non su un branch: "
+            "usa 'payroll update apply' per aggiornare a un tag piu' recente. Pull saltato."
+        )
+        return
+    result = git_ops.pull_ff_only(repo_root)
+    if result.ok:
+        typer.echo(result.stdout or "Gia' aggiornato.")
+    else:
+        typer.echo(
+            f"Pull non riuscito, proseguo comunque con il codice attuale: {result.stderr or result.stdout}"
+        )
+
+
 def run(
     app_ctx: Context,
     check_only: bool,
@@ -28,7 +55,12 @@ def run(
     backups_keep: int | None,
     do_bootstrap: bool,
     gen_deploy_key: bool,
+    do_pull: bool = False,
 ) -> None:
+    if do_pull:
+        _run_pull(app_ctx.repo_root)
+        typer.echo("")
+
     typer.echo("== Verifica prerequisiti ==")
     checks = doctor_module.run_checks(app_ctx.repo_root)
     all_ok = _print_checks(checks)

@@ -55,6 +55,15 @@ def is_dirty(repo_root: Path) -> bool:
     return bool(_run(repo_root, ["status", "--porcelain"]).stdout)
 
 
+def pull_ff_only(repo_root: Path) -> GitResult:
+    """Aggiorna il branch corrente da origin, solo fast-forward: non crea mai
+    un merge commit ne' tenta un rebase automatico. Fallisce (returncode != 0,
+    mai un'eccezione) se la history e' divergente o non c'e' un branch/upstream
+    tracciato (es. HEAD staccato su un tag) — il chiamante decide come
+    reagire, non viene mai forzato un pull distruttivo."""
+    return _run(repo_root, ["pull", "--ff-only"])
+
+
 def fetch_tags(repo_root: Path) -> GitResult:
     return _run(repo_root, ["fetch", "--tags", "--force", "origin"])
 

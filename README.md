@@ -42,6 +42,7 @@ uv run payroll help update check           # help di un sottocomando annidato
 uv run payroll setup --check               # solo verifica prerequisiti (docker/compose/git/uv/disco/UID)
 uv run payroll setup --bootstrap           # wizard configurazione + build/avvio/migration/smoke test
 uv run payroll setup --deploy-key          # (solo role=node) genera/mostra la deploy key SSH read-only
+uv run payroll setup --pull                # git pull --ff-only prima di tutto il resto (saltato se dirty o su un tag)
 uv run payroll db backup                   # dump verificato + snapshot conteggi righe (backups/)
 uv run payroll db restore [dump]           # idempotente: no-op se lo schema esiste gia'
 uv run payroll db migrate [revision]       # alembic upgrade (default: head)

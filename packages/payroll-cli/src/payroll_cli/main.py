@@ -69,6 +69,12 @@ def setup(
     deploy_key: bool = typer.Option(
         False, "--deploy-key", help="Genera (se serve) una deploy key SSH read-only per questo nodo e configura il repo per usarla."
     ),
+    pull: bool = typer.Option(
+        False,
+        "--pull",
+        help="Prima di tutto il resto: git pull --ff-only sul branch corrente (saltato se working tree "
+        "sporco o se sei su un tag di release: in quel caso usa 'payroll update apply').",
+    ),
 ) -> None:
     """Prima installazione: verifica prerequisiti, scrive la config per-macchina, opzionalmente fa il bootstrap."""
     setup_cmd.run(
@@ -81,6 +87,7 @@ def setup(
         backups_keep=backups_keep,
         do_bootstrap=bootstrap,
         gen_deploy_key=deploy_key,
+        do_pull=pull,
     )
 
 
