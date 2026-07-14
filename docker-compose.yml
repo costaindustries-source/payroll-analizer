@@ -1,13 +1,13 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:17.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: payroll
       POSTGRES_PASSWORD: payroll
       POSTGRES_DB: payroll
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data_pg17:/var/lib/postgresql/data
     ports:
       # Solo loopback: il DB contiene dati retributivi reali con credenziali
       # banali, non va esposto sulla LAN (basta l'accesso da client locali,
@@ -39,3 +39,4 @@ services:
 
 volumes:
   db_data:
+  db_data_pg17:

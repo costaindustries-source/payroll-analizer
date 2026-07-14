@@ -73,6 +73,25 @@ docker compose exec db pg_dump -U payroll payroll > backup.sql                 #
 
 Client esterno (DBeaver/SQLTools): `localhost:5432`, utente/password/db `payroll`.
 
+## Aggiornamento major version di PostgreSQL
+
+`docker-compose.yml` e' identico e versionato su ogni ambiente: un bump di
+major version dell'immagine Postgres (es. 16 -> 17) cambia anche il nome del
+volume dati, quindi va migrato su **ogni** macchina che aggiorna il checkout,
+non solo su quella dove il bump e' stato deciso. Procedura in due fasi:
+
+```bash
+scripts/upgrade-postgres.sh backup     # PRIMA di aggiornare il checkout, col vecchio db in esecuzione
+git pull                               # (o checkout del tag) -> docker-compose.yml ora punta alla nuova image/volume
+scripts/upgrade-postgres.sh restore    # DOPO, ripristina i dati nel nuovo volume
+```
+
+`restore` senza argomenti usa automaticamente il backup piu' recente in
+`backups/` e non fa nulla (idempotente) se il volume di destinazione ha gia'
+uno schema. Il volume precedente non viene mai cancellato automaticamente:
+resta come rete di sicurezza, va rimosso a mano (`docker volume ls` / `docker
+volume rm`) quando si e' certi che la migrazione sia andata a buon fine.
+
 ## Migrations (Alembic)
 
 ```bash

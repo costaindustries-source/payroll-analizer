@@ -2,6 +2,20 @@
 
 Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
+## [Non rilasciato]
+
+### Modificato
+- Python 3.12 -> 3.14 (`.python-version`, `pyproject.toml`, immagine base Dockerfile).
+- Postgres 16 -> 17.6 in `docker-compose.yml` (allineato alla versione
+  dell'istanza Supabase usata come riferimento). Cambio di major version:
+  richiede la procedura in due fasi di `scripts/upgrade-postgres.sh` su ogni
+  ambiente (v. README).
+
+### Aggiunto
+- `scripts/upgrade-postgres.sh` — backup/restore per migrare i dati a un nuovo
+  volume quando cambia la major version di Postgres, riutilizzabile per
+  qualunque futuro bump (non solo 16->17).
+
 ## [v0.3.0] - 2026-07-13
 
 ### Fix

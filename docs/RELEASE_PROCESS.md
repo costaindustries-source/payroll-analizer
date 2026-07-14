@@ -76,3 +76,4 @@ Riporta Debian al tag indicato e ricostruisce l'immagine. Non tocca GitHub
 - [ ] Se la modifica tocca l'estrazione di importi, ho controllato a mano almeno un caso reale prima di considerarla affidabile?
 - [ ] Il messaggio di release spiega il *perché*, non solo il *cosa* (finisce in `CHANGELOG.md`/`RELEASE_LOG.md`, letto a distanza di mesi)?
 - [ ] Se cambia lo schema DB, la migration Alembic è nel commit ed è stata testata con `alembic upgrade head` su un DB pulito?
+- [ ] Se cambia la *major version* di Postgres in `docker-compose.yml` (cambia anche il nome del volume dati), ogni ambiente deve eseguire `scripts/upgrade-postgres.sh backup` **prima** di aggiornare il checkout e `... restore` **dopo** — v. sezione README "Aggiornamento major version di PostgreSQL". Un patch/minor bump (es. 17.5 -> 17.6, stesso volume) non ne ha bisogno.
