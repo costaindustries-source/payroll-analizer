@@ -601,21 +601,93 @@ def _recover_iban(raw: str) -> tuple[str, bool]:
     return raw, False
 
 
+def _amount_after_label(words: list[Word], label_norm: str) -> Decimal | None:
+    """Cerca il primo importo che segue (per posizione nella riga, non solo nel
+    testo) la parola che completa l'etichetta cercata, invece del primo importo
+    dell'intera riga. Necessario perche' due blocchi logicamente distinti
+    possono finire sulla stessa riga clusterizzata quando la precisione delle
+    coordinate lo consente (osservato sui documenti con fallback OCR
+    07.pdf/08.pdf, dove l'imprecisione delle coordinate OCR fonde la riga
+    'Ferie ...' con quella di 'TOTALE TRATTENUTE' immediatamente successiva,
+    v. issue GH #12): prendere il primo importo della riga a prescindere dalla
+    posizione restituiva in quel caso il dato di 'Ferie' (piu' a sinistra)
+    invece del vero totale. ``words`` e' gia' ordinato per x0 (v. _cluster_rows),
+    quindi una volta individuata la parola che completa l'etichetta, gli
+    importi che contano sono solo quelli successivi nella lista."""
+    acc = ""
+    for idx, w in enumerate(words):
+        acc = normalize_label(acc + w.text)
+        if label_norm in acc:
+            for later in words[idx + 1 :]:
+                if later.text in _PAREN_MARKERS:
+                    continue
+                value = parse_amount(later.text)
+                if value is not None:
+                    return abs(value)
+            return None
+    # L'etichetta non e' stata trovata scandendo parola per parola (non
+    # dovrebbe succedere, dato che il chiamante ha gia' verificato un match su
+    # tutta la riga): fallback prudenziale sul comportamento precedente.
+    return _first_amount(words)
+
+
+_PROGRESSIVI_LABEL_NORM = normalize_label("PROGRESSIVI")
+
+
+def _extract_progressivi(rows: list[Row]) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """Sotto-tabella 'PROGRESSIVI Imp. INPS Imp. INAIL Imp. IRPEF IRPEF pagata':
+    intestazioni di colonna su una riga, valori senza etichetta sulla riga
+    successiva, allineati per x0 (stesso pattern gia' usato per la sotto-tabella
+    T.F.R., v. _extract_tfr). "IRPEF" compare due volte nell'intestazione (colonna
+    "Imp. IRPEF" e colonna "IRPEF pagata"): solo la prima occorrenza ha un campo
+    corrispondente in PayrollTotalsDTO, la seconda va ignorata esplicitamente
+    (altrimenti il suo valore, piu' a destra, sovrascriverebbe quello corretto)."""
+    for i, row in enumerate(rows):
+        if not normalize_label(row.text).startswith(_PROGRESSIVI_LABEL_NORM):
+            continue
+        marker_positions: list[tuple[float, str]] = []
+        seen_irpef = False
+        for w in row.words:
+            if w.text == "INPS":
+                marker_positions.append((w.x0, "imponibile_inps"))
+            elif w.text == "INAIL":
+                marker_positions.append((w.x0, "imponibile_inail"))
+            elif w.text == "IRPEF" and not seen_irpef:
+                marker_positions.append((w.x0, "imponibile_irpef"))
+                seen_irpef = True
+        if not marker_positions or i + 1 >= len(rows):
+            # "PROGRESSIVI" da solo, senza le colonne Imp. INPS/INAIL/IRPEF
+            # accanto, e' un'etichetta di sezione vuota (osservato in cedolini
+            # a piu' pagine dove i dati sono su un'altra pagina, v. issue GH
+            # #9/#11): non e' la riga giusta, ma potrebbe essercene un'altra
+            # piu' avanti (su un'altra pagina) con i dati veri - continua la
+            # ricerca invece di arrenderti al primo match testuale.
+            continue
+        values: dict[str, Decimal] = {}
+        for value_word in rows[i + 1].words:
+            amount = parse_amount(value_word.text)
+            if amount is None:
+                continue
+            nearest_x0, field = min(marker_positions, key=lambda m: abs(m[0] - value_word.x0))
+            if abs(nearest_x0 - value_word.x0) <= _TFR_COLUMN_MATCH_TOLERANCE:
+                values[field] = amount
+        return values.get("imponibile_inps"), values.get("imponibile_inail"), values.get("imponibile_irpef")
+    return None, None, None
+
+
 def _extract_totals(rows: list[Row]) -> PayrollTotalsDTO:
     totals = PayrollTotalsDTO()
     netto_label_norm = normalize_label("NETTO DEL MESE")
+    totale_competenze_norm = normalize_label("TOTALE COMPETENZE")
+    totale_trattenute_norm = normalize_label("TOTALE TRATTENUTE")
     for i, row in enumerate(rows):
         norm = normalize_label(row.text)
         # "in" e non "startswith": alcune etichette (es. "TOTALE COMPETENZE") sono
         # precedute sulla stessa riga da un titolo di sezione ("RATEI ...").
-        if normalize_label("Imp. INPS") in norm:
-            totals.imponibile_inps = _first_amount(row.words)
-        elif normalize_label("Imp. INAIL") in norm:
-            totals.imponibile_inail = _first_amount(row.words)
-        elif normalize_label("TOTALE COMPETENZE") in norm:
-            totals.totale_competenze = _first_amount(row.words)
-        elif normalize_label("TOTALE TRATTENUTE") in norm:
-            totals.totale_trattenute = _first_amount(row.words)
+        if totale_competenze_norm in norm:
+            totals.totale_competenze = _amount_after_label(row.words, totale_competenze_norm)
+        elif totale_trattenute_norm in norm:
+            totals.totale_trattenute = _amount_after_label(row.words, totale_trattenute_norm)
         elif norm == netto_label_norm:
             # Il valore "NETTO DEL MESE" e' reso in un riquadro grafico separato,
             # sulla riga successiva (~10pt piu' in basso), non su questa stessa riga.
@@ -628,19 +700,46 @@ def _extract_totals(rows: list[Row]) -> PayrollTotalsDTO:
             iban_match = re.search(r"IBAN\s+([A-Z]{2}\s*[A-Z0-9\s]+)", row.text)
             if iban_match:
                 totals.iban = re.sub(r"\s+", "", iban_match.group(1))
+
+    # Imp. INPS/INAIL/IRPEF non sono su questa riga ma sulla sotto-tabella
+    # "PROGRESSIVI" (etichette di colonna su una riga, valori sulla successiva,
+    # v. issue GH #13): il vecchio codice cercava un importo sulla stessa riga
+    # dell'etichetta "Imp. INPS"/"Imp. INAIL", che qui non c'e' mai (per INPS)
+    # o appartiene a un'annotazione diversa e semanticamente non equivalente
+    # (per INAIL, la riga "Imp. INAIL ... Voce Tariffa ..." e' la base
+    # imponibile della singola voce, non il progressivo).
+    totals.imponibile_inps, totals.imponibile_inail, totals.imponibile_irpef = _extract_progressivi(rows)
     return totals
 
 
 def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
     page = doc.first_page
     rows = page.rows
+    # Alcuni cedolini (conguaglio annuale allegato nello stesso PDF, v. issue GH
+    # #9) stampano i box "TOTALE COMPETENZE/TRATTENUTE", "NETTO DEL MESE", IBAN
+    # e la sotto-tabella T.F.R./ferie solo sull'ULTIMA pagina, lasciando quelle
+    # etichette vuote (o assenti) sulla prima. Le funzioni di estrazione "a
+    # scansione" (totali, tax addizionali, tfr, ferie) cercano un'etichetta nota
+    # su tutte le righe passate e sovrascrivono il valore trovato ad ogni match:
+    # concatenare le righe di TUTTE le pagine nell'ordine del documento le rende
+    # multi-pagina "gratis", perche' l'ultimo match (pagina successiva, quella
+    # col dato reale) sovrascrive sempre l'eventuale match vuoto/spurio di una
+    # pagina precedente. Per i documenti a pagina singola (la stragrande
+    # maggioranza) all_rows coincide esattamente con rows, quindi il
+    # comportamento esistente non cambia.
+    # L'header anagrafico e le righe voce (_parse_header/_extract_causale_rows)
+    # restano deliberatamente ancorati alla sola prima pagina: la delimitazione
+    # dei confini della tabella voci (v. _fallback_causale_bounds, issue GH #11)
+    # non e' pensata per un flusso multi-pagina e concatenare rischierebbe di
+    # introdurre nuovi falsi positivi/negativi non necessari a risolvere #9.
+    all_rows = [r for p in doc.pages for r in p.rows]
 
     company, employee, hire_date_str, tipo_costo_text = _parse_header(rows)
     pay_lines, unmapped_rows, causale_corrections = _extract_causale_rows(rows)
-    tax = _extract_tax(pay_lines, rows)
-    tfr = _extract_tfr(rows)
-    leave_balances = _extract_leave_balances(rows)
-    totals = _extract_totals(rows)
+    tax = _extract_tax(pay_lines, all_rows)
+    tfr = _extract_tfr(all_rows)
+    leave_balances = _extract_leave_balances(all_rows)
+    totals = _extract_totals(all_rows)
 
     iban_correction: tuple[str, str] | None = None
     if totals.iban:
@@ -775,6 +874,27 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
                     "verificare manualmente"
                 ),
                 campo="totals.iban",
+            )
+        )
+
+    # Netto e IBAN sono il dato con cui l'utente riconcilia gli accrediti reali
+    # in banca: se restano assenti dopo l'estrazione (v. issue GH #9) il
+    # documento non puo' essere considerato affidabile senza revisione umana,
+    # a differenza delle correzioni sopra (auto-applicate con conferma
+    # checksum/pattern). ERROR, non WARNING: forza NEEDS_REVIEW invece di
+    # PROCESSED_WITH_ANOMALIES, cosi' il gap resta visibile a `check-years`
+    # (che oggi guarda solo la tabella anomaly) invece di passare per un
+    # documento pulito.
+    missing_totals = [
+        campo for campo, valore in (("netto_mese", totals.netto_mese), ("iban", totals.iban)) if valore is None
+    ]
+    if missing_totals:
+        dto.anomalies.append(
+            AnomalyDTO(
+                tipo="totali_mancanti",
+                severita=AnomalySeverity.ERROR,
+                messaggio=f"Campi totali non estratti da nessuna pagina del documento: {', '.join(missing_totals)}",
+                campo="totals",
             )
         )
 

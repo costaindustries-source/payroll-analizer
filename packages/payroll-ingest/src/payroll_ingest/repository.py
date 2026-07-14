@@ -237,10 +237,16 @@ def save_document(
     session.add(
         RawExtraction(
             document_id=document.id,
-            full_text=raw.first_page.full_text,
+            # Tutte le pagine, non solo la prima (v. issue GH #9): per i
+            # cedolini con conguaglio annuale allegato nello stesso PDF, i dati
+            # dell'ultima pagina (netto/IBAN/progressivi) non erano salvati da
+            # nessuna parte nel DB, quindi non recuperabili nemmeno a mano da
+            # raw_extraction come safety net.
+            full_text="\n\n".join(p.full_text for p in raw.pages),
             words=[
                 {"text": w.text, "x0": w.x0, "x1": w.x1, "top": w.top, "bottom": w.bottom}
-                for w in raw.first_page.words
+                for p in raw.pages
+                for w in p.words
             ],
             unrecognized_rows=dto.unrecognized_row_texts,
             font_metadata={},
