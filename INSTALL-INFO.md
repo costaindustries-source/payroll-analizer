@@ -44,14 +44,23 @@ Tutto il software richiesto — sistema operativo dei container, database, libre
 
 Questa sezione presume **Windows nativo**, senza dover configurare manualmente una distribuzione Linux (WSL) a parte: userai PowerShell e Docker Desktop così come si installano di default.
 
-### Docker Desktop
+### Docker Desktop — l'unico passo che richiede diritti di amministratore
+
+Docker Desktop installa componenti di sistema (WSL2/Hyper-V) e per questo **richiede un account amministratore**: è l'unica eccezione in questa guida, non esiste un modo per aggirarlo con un pacchetto utente.
+
+**Se il tuo account Windows non è amministratore** (es. PC aziendale gestito da IT):
+
+1. Verifica prima se è già installato: `docker --version` in PowerShell. Su molti PC aziendali Docker Desktop (o WSL2) è già predisposto da IT.
+2. Se manca, chiedi al reparto IT di installarlo (o di abilitare WSL2) una tantum. Tutto il resto di questa guida — Git, `uv`, GitHub CLI — si installa regolarmente senza privilegi elevati, ad esempio con [scoop](https://scoop.sh) (vedi sotto): non serve altro intervento IT dopo questo primo passo.
+
+**Se invece hai diritti di amministratore**, installa tu stesso:
 
 1. Scarica Docker Desktop da [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) e avvia l'installer.
 2. Durante l'installazione lascia spuntata l'opzione predefinita ("Use WSL 2 instead of Hyper-V"): Docker Desktop configura da sé il necessario, non dovrai mai aprire o gestire tu una distribuzione Linux a mano.
 3. Al termine, **riavvia il computer** se richiesto.
 4. Avvia Docker Desktop dal menu Start e attendi che l'icona nella barra delle applicazioni indichi che è pronto (icona della balena, stabile, non animata).
 
-Verifica in PowerShell:
+In entrambi i casi, verifica in PowerShell:
 
 ```powershell
 docker --version
@@ -60,38 +69,55 @@ docker compose version
 
 Se entrambi rispondono con un numero di versione, sei a posto.
 
-### Git
+### Git, uv, GitHub CLI
 
-Scarica e installa [Git for Windows](https://git-scm.com/download/win) (le opzioni di default vanno bene per tutta l'installazione). Verifica:
+Questi tre programmi si installano **senza bisogno di diritti di amministratore**, in due modi equivalenti: scegli quello più comodo per te.
+
+#### Opzione A — con `scoop` (consigliata se non sei amministratore)
+
+[Scoop](https://scoop.sh) è un gestore di pacchetti che installa tutto nel tuo profilo utente, mai in cartelle di sistema. Se non lo hai già:
+
+```powershell
+irm get.scoop.sh | iex
+```
+
+Poi:
+
+```powershell
+scoop install git
+scoop install uv
+scoop install gh
+```
+
+> Se `scoop install uv` non trova il pacchetto (dipende dai bucket abilitati sul tuo scoop), usa in alternativa l'installer ufficiale dell'Opzione B qui sotto per il solo `uv` — anche quello non richiede admin.
+
+#### Opzione B — installer ufficiali (di solito non richiedono admin, ma su alcuni PC aziendali possono essere bloccati da policy)
+
+```powershell
+# Git for Windows: https://git-scm.com/download/win (installer grafico, opzioni di default)
+
+# uv
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# GitHub CLI
+winget install --id GitHub.cli
+```
+
+**Qualunque opzione tu scelga, chiudi e riapri PowerShell** dopo l'installazione (serve perché il PATH venga aggiornato). Verifica tutto:
 
 ```powershell
 git --version
-```
-
-### uv (gestore Python)
-
-In PowerShell:
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-**Chiudi e riapri PowerShell** dopo l'installazione (serve perché il PATH venga aggiornato). Verifica:
-
-```powershell
 uv --version
+gh --version
 ```
 
-### GitHub CLI (per clonare il repository privato)
-
-Il repository è **privato**: il modo più semplice per autenticarsi senza gestire chiavi SSH a mano è la [GitHub CLI](https://cli.github.com/):
+### Autenticarsi su GitHub (repository privato)
 
 ```powershell
-winget install --id GitHub.cli
 gh auth login
 ```
 
-`gh auth login` apre il browser per il login: scegli `GitHub.com`, `HTTPS`, poi "Login with a web browser" e segui le istruzioni a schermo.
+Scegli `GitHub.com`, poi `HTTPS`, poi "Login with a web browser" e segui le istruzioni a schermo (si apre il browser per il login).
 
 A questo punto i prerequisiti Windows sono completi: passa al [punto 3](#3-ottenere-il-codice).
 
