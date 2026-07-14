@@ -410,7 +410,19 @@ def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str],
             if correction is not None:
                 corrections.append(correction)
         elif row.text.strip():
-            unmapped.append(row.text)
+            # Zucchetti stampa a volte una riga di continuazione senza codice
+            # causale proprio, sotto la voce a cui si riferisce (es. "Riferimento
+            # anno 2020/2021" sotto un arretrato, o "MBO" sotto "Premio per
+            # obiettivi", v. issue GH #7/#8): non e' una voce a se stante, quindi
+            # non ha senso segnalarla come "non mappata" se puo' essere agganciata
+            # alla voce appena riconosciuta prima di lei. Se invece non c'e' ancora
+            # nessuna voce precedente in questa sezione, resta genuinamente
+            # orfana e va segnalata come prima.
+            if pay_lines:
+                previous = pay_lines[-1]
+                previous.note = f"{previous.note} | {row.text}" if previous.note else row.text
+            else:
+                unmapped.append(row.text)
     return pay_lines, unmapped, corrections
 
 

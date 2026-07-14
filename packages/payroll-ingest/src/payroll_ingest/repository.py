@@ -164,6 +164,7 @@ def save_document(
                 trattenuta=pl.trattenuta,
                 competenza=pl.competenza,
                 raw_text=pl.raw_text,
+                note=pl.note,
             )
         )
 

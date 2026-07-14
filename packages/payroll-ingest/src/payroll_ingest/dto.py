@@ -85,6 +85,7 @@ class PayLineDTO:
     trattenuta: Decimal | None = None
     competenza: Decimal | None = None
     raw_text: str = ""
+    note: str | None = None
     classification: DataClassification = DataClassification.CERTO
 
 

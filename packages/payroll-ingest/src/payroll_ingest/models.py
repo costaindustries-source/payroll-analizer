@@ -150,6 +150,7 @@ class PayLine(Base):
     trattenuta: Mapped[Decimal | None] = mapped_column(NUMERIC)
     competenza: Mapped[Decimal | None] = mapped_column(NUMERIC)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
 
     document: Mapped[PayrollDocument] = relationship(back_populates="pay_lines")
 
