@@ -240,17 +240,38 @@ _CAUSALE_CORRUPT_DIGIT = "2"
 _CAUSALE_CORRECT_LETTER = "Z"
 _SUSPECT_LEADING_2_RE = re.compile(r"^2\d{3,5}$")
 
+# Glitch diverso, confermato su 07.pdf (issue GH #5): un carattere spurio (es.
+# '\') incollato DAVANTI a un codice altrimenti valido, sullo stesso token (non
+# un marker separato: v. _leading_code_index per quel caso). A differenza del
+# glitch Z->2, qui non c'e' ambiguita' da risolvere con un "suspect scan": un
+# codice valido inizia sempre per lettera maiuscola o cifra (_CODE_RE), quindi
+# un primo carattere che non e' ne' l'uno ne' l'altro non puo' mai far parte di
+# un codice genuino, ed e' sempre sicuro rimuoverlo se il resto del token
+# combacia con _CODE_RE.
+_CAUSALE_CORRECTION_REASONS = {
+    "font_digit_lettera": "glitch font Z->2, v. issue GH #4",
+    "prefisso_spurio": "carattere spurio anteposto al codice, v. issue GH #5",
+}
 
-def _recover_causale_code(raw_code: str) -> tuple[str, bool]:
-    """Ritorna (codice, corretto_automaticamente). Vedi nota sopra _SUSPECT_LEADING_2_RE
-    sul perche' solo il caso 'digit seguito da lettera' e' corretto qui."""
+
+def _recover_causale_code(raw_code: str) -> tuple[str, str | None]:
+    """Ritorna (codice, tipo_correzione). tipo_correzione e' None se il codice
+    era gia' valido, altrimenti la chiave in _CAUSALE_CORRECTION_REASONS che
+    descrive l'euristica di recupero applicata. Vedi nota sopra
+    _SUSPECT_LEADING_2_RE sul perche' solo il caso 'digit seguito da lettera'
+    lascia un residuo di ambiguita' (suspect scan) mentre lo strip del
+    prefisso spurio no."""
     if _CODE_RE.match(raw_code):
-        return raw_code, False
+        return raw_code, None
     if len(raw_code) > 1 and raw_code[0] == _CAUSALE_CORRUPT_DIGIT and raw_code[1].isalpha():
         candidate = _CAUSALE_CORRECT_LETTER + raw_code[1:]
         if _CODE_RE.match(candidate):
-            return candidate, True
-    return raw_code, False
+            return candidate, "font_digit_lettera"
+    if len(raw_code) > 1 and not ("A" <= raw_code[0] <= "Z") and not raw_code[0].isdigit():
+        candidate = raw_code[1:]
+        if _CODE_RE.match(candidate):
+            return candidate, "prefisso_spurio"
+    return raw_code, None
 
 
 def _leading_code_index(words: list[Word]) -> int | None:
@@ -262,19 +283,19 @@ def _leading_code_index(words: list[Word]) -> int | None:
     sempre entro le prime _MAX_LEADING_MARKERS+1 parole della riga."""
     for idx in range(min(len(words), _MAX_LEADING_MARKERS + 1)):
         text = words[idx].text
-        if _CODE_RE.match(text) or _recover_causale_code(text)[1]:
+        if _CODE_RE.match(text) or _recover_causale_code(text)[1] is not None:
             return idx
     return None
 
 
-def _parse_causale_row(row: Row) -> tuple[PayLineDTO, tuple[str, str] | None] | None:
+def _parse_causale_row(row: Row) -> tuple[PayLineDTO, tuple[str, str, str] | None] | None:
     words = row.words
     idx = _leading_code_index(words)
     if idx is None:
         return None
     code_word = words[idx]
-    codice, corretto = _recover_causale_code(code_word.text)
-    causale_correction = (code_word.text, codice) if corretto else None
+    codice, correction_kind = _recover_causale_code(code_word.text)
+    causale_correction = (code_word.text, codice, correction_kind) if correction_kind else None
     idx += 1
 
     # La descrizione e' la sequenza di parole "non numeriche" dopo il codice: alcune
@@ -356,12 +377,13 @@ def _fallback_causale_bounds(rows: list[Row]) -> tuple[int | None, int]:
     return start_idx, end_idx
 
 
-def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str], list[tuple[str, str]]]:
+def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str], list[tuple[str, str, str]]]:
     """Analizza le righe voce dinamiche, delimitate tra l'intestazione colonne e
     'Retribuzione utile T.F.R.' (o il primo TOTALE, se il TFR non e' presente).
     Il terzo elemento ritornato sono le correzioni automatiche codice_causale
-    (originale, corretto) applicate da _recover_causale_code, da segnalare come
-    anomalia esplicita in map_document (v. issue GH #4)."""
+    (originale, corretto, tipo_correzione) applicate da _recover_causale_code,
+    da segnalare come anomalia esplicita in map_document (v.
+    _CAUSALE_CORRECTION_REASONS)."""
     start_idx = None
     end_idx = len(rows)
     for i, row in enumerate(rows):
@@ -379,7 +401,7 @@ def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str],
 
     pay_lines: list[PayLineDTO] = []
     unmapped: list[str] = []
-    corrections: list[tuple[str, str]] = []
+    corrections: list[tuple[str, str, str]] = []
     for row in rows[start_idx:end_idx]:
         parsed = _parse_causale_row(row)
         if parsed is not None:
@@ -685,20 +707,20 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
             )
         )
 
-    for originale, corretto in causale_corrections:
+    for originale, corretto, correction_kind in causale_corrections:
         dto.anomalies.append(
             AnomalyDTO(
                 tipo="codice_causale_corretto_automaticamente",
                 severita=AnomalySeverity.WARNING,
                 messaggio=(
-                    f"Codice causale {originale!r} corretto in {corretto!r} (glitch font Z->2, "
-                    "v. issue GH #4) - verificare manualmente"
+                    f"Codice causale {originale!r} corretto in {corretto!r} "
+                    f"({_CAUSALE_CORRECTION_REASONS[correction_kind]}) - verificare manualmente"
                 ),
                 campo="pay_lines",
             )
         )
 
-    if causale_corrections:
+    if any(kind == "font_digit_lettera" for _, _, kind in causale_corrections):
         # La corruzione Z->2 e' gia' confermata su questo documento (v. sopra): un
         # codice puramente numerico che inizia per '2' e' quindi sospetto, ma senza
         # un checksum non possiamo correggerlo (v. nota su _SUSPECT_LEADING_2_RE).

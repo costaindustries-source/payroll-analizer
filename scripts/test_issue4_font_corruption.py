@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Verifica ad-hoc per issue GH #4 (glitch font Zucchetti Z->2 su codici causale,
-O->0 su IBAN). Usa Row/Word sintetici (nessun cedolino reale, nessun dato personale)
-perche' i campioni reali sono gitignored e non presenti su questa sandbox.
+O->0 su IBAN) e issue GH #5 (carattere spurio anteposto al codice causale). Usa
+Row/Word sintetici (nessun cedolino reale, nessun dato personale) perche' i
+campioni reali sono gitignored e non presenti su questa sandbox.
 
 Uso: uv run python scripts/test_issue4_font_corruption.py
 """
@@ -36,7 +37,11 @@ check("caso 1a: riga con '2P9960' viene comunque mappata (non persa)", line_a is
 if line_a is not None:
     payline, correction = line_a
     check("caso 1a: codice corretto in 'ZP9960'", payline.codice == "ZP9960", payline.codice)
-    check("caso 1a: correzione riportata per l'anomalia", correction == ("2P9960", "ZP9960"), str(correction))
+    check(
+        "caso 1a: correzione riportata per l'anomalia",
+        correction == ("2P9960", "ZP9960", "font_digit_lettera"),
+        str(correction),
+    )
 
 # --- Caso 1b: codice corrotto che combacia per caso con _CODE_RE (Z00020 -> 200020) ---
 row_b = Row(top=110.0, words=[word("200020", 30), word("Retribuzione", 60), word("Ordinaria", 110)])
@@ -56,8 +61,21 @@ check(
 )
 
 # --- Caso 1c: codice genuinamente valido non deve essere toccato ---
-codice_valido, corretto_valido = z._recover_causale_code("F02000")
-check("caso 1c: codice valido 'F02000' non modificato", codice_valido == "F02000" and not corretto_valido)
+codice_valido, tipo_correzione_valido = z._recover_causale_code("F02000")
+check("caso 1c: codice valido 'F02000' non modificato", codice_valido == "F02000" and tipo_correzione_valido is None)
+
+# --- Caso 1d: carattere spurio anteposto al codice (issue GH #5, '\F03020' su 07.pdf) ---
+row_d = Row(top=120.0, words=[word("\\F03020", 30), word("Ritenute", 60), word("IRPEF", 100), word("1.560,21", 460)])
+line_d = z._parse_causale_row(row_d)
+check("caso 1d: riga con '\\F03020' viene comunque mappata (non persa)", line_d is not None)
+if line_d is not None:
+    payline_d, correction_d = line_d
+    check("caso 1d: codice corretto in 'F03020'", payline_d.codice == "F03020", payline_d.codice)
+    check(
+        "caso 1d: correzione riportata come 'prefisso_spurio'",
+        correction_d == ("\\F03020", "F03020", "prefisso_spurio"),
+        str(correction_d),
+    )
 
 # --- Caso 2: IBAN con CIN corrotto O->0 (la manifestazione confermata nell'issue),
 # verificato via checksum mod-97 ---
