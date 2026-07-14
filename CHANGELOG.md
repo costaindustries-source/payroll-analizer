@@ -10,11 +10,21 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
   dell'istanza Supabase usata come riferimento). Cambio di major version:
   richiede la procedura in due fasi di `scripts/upgrade-postgres.sh` su ogni
   ambiente (v. README).
+- Repo riorganizzato come **workspace uv** (`packages/payroll-ingest`,
+  `packages/payroll-cli`): `src/`, `alembic/`, `alembic.ini` spostati in
+  `packages/payroll-ingest/`. Il `Dockerfile` e l'immagine `app` sono
+  invariati nel comportamento (stessi comandi `docker compose run --rm app
+  payroll-ingest ...` / `alembic ...`).
 
 ### Aggiunto
 - `scripts/upgrade-postgres.sh` — backup/restore per migrare i dati a un nuovo
   volume quando cambia la major version di Postgres, riutilizzabile per
   qualunque futuro bump (non solo 16->17).
+- CLI operativa **host** `payroll` (`packages/payroll-cli`), prima fase della
+  reingegnerizzazione descritta in `docs/CLI_REDESIGN_PROPOSAL.md`: comandi
+  `version`, `status`, `update check`, `help` (read-only, nessuna azione
+  distruttiva). `scripts/release.sh` e `scripts/upgrade-postgres.sh` restano
+  in vigore fino alle fasi successive.
 
 ## [v0.3.0] - 2026-07-13
 

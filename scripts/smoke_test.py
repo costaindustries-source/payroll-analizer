@@ -3,7 +3,8 @@
 
 Gira sui 6 cedolini reali di riferimento (mai versionati in git, v. .gitignore)
 per verificare che riconoscimento + mapping continuino a funzionare dopo una
-modifica a src/payroll_ingest/templates/zucchetti.py o extraction.py.
+modifica a packages/payroll-ingest/src/payroll_ingest/templates/zucchetti.py o
+extraction.py.
 
 Uso:
     python scripts/smoke_test.py [--samples-dir docs/payroll-test]
@@ -16,7 +17,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "packages" / "payroll-ingest" / "src"))
 
 from payroll_ingest.extraction import extract_document  # noqa: E402
 from payroll_ingest.templates.zucchetti import is_zucchetti_document, map_document  # noqa: E402

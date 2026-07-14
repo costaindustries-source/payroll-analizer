@@ -37,3 +37,8 @@ docs/payroll-test/*.pdf
 # v. docker-compose.override.yml.example.
 docker-compose.override.yml
 
+# Config per-macchina di 'payroll' (nome, ruolo, porta DB, retention):
+# v. docs/CLI_REDESIGN_PROPOSAL.md §5. Non ancora generato da nessun comando
+# (payroll setup non e' ancora implementato), ma il nome e' gia' riservato.
+payroll.local.toml
+

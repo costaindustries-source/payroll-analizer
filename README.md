@@ -4,8 +4,37 @@ Batch di ingestion cedolini PDF -> database PostgreSQL.
 
 Guide complete: [`INSTALL-INFO.md`](INSTALL-INFO.md) (installazione da zero),
 [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md) (rilascio Ubuntu -> GitHub
--> Debian), [`PIANO_TECNICO.md`](PIANO_TECNICO.md) (piano tecnico). Quanto
-segue è un riferimento rapido ai comandi usati più spesso.
+-> Debian), [`PIANO_TECNICO.md`](PIANO_TECNICO.md) (piano tecnico),
+[`docs/CLI_REDESIGN_PROPOSAL.md`](docs/CLI_REDESIGN_PROPOSAL.md) (piano di
+reingegnerizzazione della CLI operativa, in corso). Quanto segue è un
+riferimento rapido ai comandi usati più spesso.
+
+## Struttura del repo (workspace uv)
+
+Il progetto è un workspace uv con due pacchetti in `packages/`:
+
+- `payroll-ingest` — motore di dominio (parsing, DB, CLI `payroll-ingest`),
+  installato **solo dentro il container** `app`. Invariato nel comportamento.
+- `payroll-cli` — CLI operativa **host** (`payroll`), pensata per girare sulla
+  macchina che ospita Docker, non nel container. Copre oggi `version`,
+  `status`, `update check`, `help`; il resto del ciclo di vita (`setup`,
+  `update apply`, `db backup/restore`, `cleanup`, `release`) è pianificato in
+  `docs/CLI_REDESIGN_PROPOSAL.md` e non ancora implementato — per ora restano
+  in vigore `scripts/release.sh` e `scripts/upgrade-postgres.sh` (vedi le
+  sezioni più sotto).
+
+```bash
+uv sync --all-packages                    # installa entrambi i pacchetti in .venv/
+uv run payroll --help                     # CLI operativa (host)
+uv run payroll version                    # tag/commit repo, alembic current/head, versione Postgres
+uv run payroll status                     # container, documenti per stato, input/ in coda, disco
+uv run payroll update check                # confronta il tag locale con l'ultimo pubblicato su GitHub
+uv run payroll help update check           # help di un sottocomando annidato
+```
+
+`payroll` risale da solo alla radice del repo risalendo dalla cwd (cerca
+`docker-compose.yml` + `packages/payroll-cli/pyproject.toml`); se lanciato da
+fuori il checkout, imposta `PAYROLL_REPO_ROOT=/percorso/del/repo`.
 
 ## Setup iniziale (una tantum)
 

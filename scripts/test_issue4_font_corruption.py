@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "packages" / "payroll-ingest" / "src"))
 
 from payroll_ingest.extraction import Row, Word  # noqa: E402
 from payroll_ingest.templates import zucchetti as z  # noqa: E402

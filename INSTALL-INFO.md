@@ -182,4 +182,5 @@ Se in futuro cambiano il perimetro d'uso (distribuzione esterna, SaaS a terzi), 
 
 - Piano tecnico completo: `PIANO_TECNICO.md`
 - Requisiti originali: `requirements.md`
-- Codice applicazione: `src/payroll_ingest/`
+- Codice applicazione: `packages/payroll-ingest/src/payroll_ingest/`
+- CLI operativa (host): `packages/payroll-cli/`
