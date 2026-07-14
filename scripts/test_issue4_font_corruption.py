@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Verifica ad-hoc per issue GH #4 (glitch font Zucchetti Z->2 su codici causale,
-O->0 su IBAN) e issue GH #5 (carattere spurio anteposto al codice causale). Usa
-Row/Word sintetici (nessun cedolino reale, nessun dato personale) perche' i
-campioni reali sono gitignored e non presenti su questa sandbox.
+O->0 su IBAN), issue GH #5 (carattere spurio anteposto al codice causale) e
+issue GH #6/#7/#8 (righe della sezione voci senza codice causale proprio:
+rumore di estrazione da scartare vs note di continuazione da agganciare alla
+voce precedente). Usa Row/Word sintetici (nessun cedolino reale, nessun dato
+personale) perche' i campioni reali sono gitignored e non presenti su questa
+sandbox.
 
 Uso: uv run python scripts/test_issue4_font_corruption.py
 """
@@ -107,6 +110,35 @@ check(
 # --- Caso 2c: IBAN gia' valido non deve essere toccato ---
 recovered_ok, was_corrected_ok = z._recover_iban(iban_valido)
 check("caso 2c: IBAN gia' valido non modificato", recovered_ok == iban_valido and not was_corrected_ok)
+
+
+def text_row(top: float, text: str) -> Row:
+    x = 30.0
+    words = []
+    for token in text.split(" "):
+        words.append(word(token, x))
+        x += len(token) * 5 + 10
+    return Row(top=top, words=words)
+
+
+# --- Caso 3: righe voce senza codice causale proprio (issue GH #6/#7/#8) ---
+header_row = text_row(200.0, "VOCI VARIABILI DEL MESE IMPORTO BASE RIFERIMENTO TRATTENUTE COMPETENZE")
+causale_row = Row(
+    top=210.0,
+    words=[word("000096", 30), word("Premio", 60), word("per", 110), word("obiettivi", 140), word("33.498,00", 460)],
+)
+nota_row = text_row(220.0, "MBO")
+rumore_row = text_row(230.0, "1")
+boundary_row = text_row(240.0, "Retribuzione utile T.F.R.")
+pay_lines_3, unmapped_3, _ = z._extract_causale_rows([header_row, causale_row, nota_row, rumore_row, boundary_row])
+check("caso 3: la voce '000096' viene mappata", len(pay_lines_3) == 1, str(len(pay_lines_3)))
+if pay_lines_3:
+    check(
+        "caso 3: 'MBO' agganciato come nota alla voce precedente",
+        pay_lines_3[0].note == "MBO",
+        str(pay_lines_3[0].note),
+    )
+check("caso 3: '1' (rumore) scartato, non finisce in unmapped ne' come nota", unmapped_3 == [], str(unmapped_3))
 
 print()
 if failures:

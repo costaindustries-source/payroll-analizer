@@ -36,6 +36,14 @@ TEMPLATE_NAME = "zucchetti_standard"
 PARSER_VERSION = "1.0.0"
 
 _CODE_RE = re.compile(r"^[A-Z]{0,2}\d{4,6}$")
+# Riga fatta di 1-2 sole cifre isolate nella sezione voci (osservato su
+# 202201.pdf, v. issue GH #6): troppo corta per essere un codice causale
+# plausibile (_CODE_RE richiede 4-6 cifre) e priva di qualunque contenuto
+# testuale, a differenza delle vere righe di continuazione (es. "MBO",
+# "Riferimento anno 2020/2021", v. issue GH #7/#8) che sono sempre parole.
+# Rumore di estrazione/OCR: va scartato, non salvato ne' come nota ne' come
+# anomalia.
+_NOISE_ROW_RE = re.compile(r"^\d{1,2}$")
 _COMPANY_CODE_ROW_RE = re.compile(r"^(\d{6})\s+([A-Z].{5,})$")
 _ADDRESS_ROW_RE = re.compile(r"^(.*?)\s+Aut\.\s*(\S+)$")
 _CAP_CITY_ROW_RE = re.compile(r"^(\d{5})\s+([A-Z].+\([A-Z]{2}\))$")
@@ -410,6 +418,9 @@ def _extract_causale_rows(rows: list[Row]) -> tuple[list[PayLineDTO], list[str],
             if correction is not None:
                 corrections.append(correction)
         elif row.text.strip():
+            stripped = row.text.strip()
+            if _NOISE_ROW_RE.match(stripped):
+                continue
             # Zucchetti stampa a volte una riga di continuazione senza codice
             # causale proprio, sotto la voce a cui si riferisce (es. "Riferimento
             # anno 2020/2021" sotto un arretrato, o "MBO" sotto "Premio per
