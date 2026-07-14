@@ -79,12 +79,22 @@ def _determine_status(dto: PayrollDocumentDTO) -> DocumentStatus:
     return DocumentStatus.PROCESSED
 
 
-def _destination_path(settings: Settings, status: DocumentStatus, dto: PayrollDocumentDTO, filename: str) -> Path:
+def _destination_path(
+    settings: Settings, status: DocumentStatus, dto: PayrollDocumentDTO, filename: str, sha256: str
+) -> Path:
+    # Un documento senza periodo riconosciuto (o FAILED) puo' essere rielaborato
+    # piu' volte con lo stesso original_filename ma contenuto (e sha256) diverso
+    # (v. issue GH #2): senza il prefisso hash, shutil.move sovrascriverebbe
+    # silenziosamente il tentativo precedente sullo stesso path, rompendo la
+    # tracciabilita' file<->record anche se il DB resta corretto (dedup per
+    # sha256). Il path anno/mese non ha lo stesso rischio pratico: un documento
+    # con periodo riconosciuto e' gia' un esito terminale positivo, non viene
+    # rielaborato con contenuto diverso allo stesso modo.
     if status == DocumentStatus.FAILED:
-        return settings.error_dir / filename
+        return settings.error_dir / f"{sha256[:8]}_{filename}"
     if dto.period.mese and dto.period.anno:
         return settings.processed_dir / str(dto.period.anno) / f"{dto.period.mese:02d}" / filename
-    return settings.processed_dir / "non_riconosciuti" / filename
+    return settings.processed_dir / "non_riconosciuti" / f"{sha256[:8]}_{filename}"
 
 
 def process_document(settings: Settings, session_factory, run_id: str, pdf_path: Path) -> DocumentStatus | None:
@@ -157,7 +167,7 @@ def process_document(settings: Settings, session_factory, run_id: str, pdf_path:
             )
             document_uuid = document.id
 
-        destination = _destination_path(settings, status, dto, pdf_path.name)
+        destination = _destination_path(settings, status, dto, pdf_path.name, digest)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(pdf_path), str(destination))
 
