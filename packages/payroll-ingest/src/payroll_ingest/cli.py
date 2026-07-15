@@ -71,7 +71,12 @@ def delete_document(
 
     with _session_scope(session_factory) as session:
         if document_id:
-            stmt = select(PayrollDocument).where(PayrollDocument.id == uuid.UUID(document_id))
+            try:
+                parsed_id = uuid.UUID(document_id)
+            except ValueError:
+                typer.echo(f"--id non e' un UUID valido: {document_id!r}", err=True)
+                raise typer.Exit(code=1) from None
+            stmt = select(PayrollDocument).where(PayrollDocument.id == parsed_id)
         elif sha256:
             stmt = select(PayrollDocument).where(PayrollDocument.sha256 == sha256)
         else:
