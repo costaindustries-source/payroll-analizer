@@ -5,6 +5,11 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 ## [Non rilasciato]
 
 ### Fix
+- `docker-compose.override.yml` non sostituiva la porta host del DB ma la
+  aggiungeva a quella di default (5432): docker compose concatena le liste
+  (`ports`, `volumes`, ...) tra file invece di sostituirle, quindi il bind
+  falliva se la 5432 era occupata, bloccando l'intera installazione su un
+  nodo (issue #14).
 - `payroll setup` crashava con `AttributeError: module 'os' has no attribute
   'getuid'` su Windows nativo: il controllo prerequisiti UID/GID (rilevante
   solo per i bind mount su Linux/WSL) ora viene saltato su Windows invece di

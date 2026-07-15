@@ -53,10 +53,26 @@ client esterni come DBeaver/SQLTools se non corretto).
 
 ## Versionamento
 
-Tag SemVer (`vX.Y.Z`) sul branch `main`:
-- **patch** (`v0.1.1`): fix di bug/parsing, nessuna modifica a schema DB o comportamento osservabile.
-- **minor** (`v0.2.0`): nuove funzionalità (nuovo template, nuovo comando CLI, ecc.).
-- **major** (`v1.0.0`): riservato a un cambio di schema DB non retrocompatibile (richiede una migration Alembic).
+Tag SemVer (`vX.Y.Z`) sul branch `main`. **Regola cardine (2026-07-15): ogni
+fix deve essere installabile con `payroll update apply`**, che lavora solo su
+tag locali (mai su un commit sciolto di `main`) — quindi ogni bug chiuso
+richiede una nuova release, non solo un commit+push.
+
+- **patch** (`v0.1.1`): zero impatto osservabile — solo documentazione/commenti,
+  refactor verificato a diff zero, bump di dipendenze senza cambio di
+  comportamento.
+- **minor** (`v0.2.0`): **ogni bug fix chiuso** (regola esplicita, non lo
+  standard SemVer) + funzionalità retrocompatibili (nuovo template, nuovo
+  comando CLI, migration puramente additiva).
+- **major** (`vX.0.0`): riservato a cambi che `update apply` non può gestire
+  da solo in sicurezza — migration non retrocompatibile, cambio schema di
+  `payroll.local.toml`, modifiche a `updater.py`/`releaser.py` stessi,
+  comando/flag CLI rimosso o con semantica cambiata.
+
+**Eccezione una tantum**: il salto da `0.y.z` a `1.0.0` non segue la regola
+sopra — è il marcatore SemVer standard di "primo rilascio stabile", usato qui
+per la release che rende il progetto installabile in modo pulito su un nodo
+reale (issue #14) dopo che l'app era già in produzione su dati veri da tempo.
 
 ## Procedura standard: `scripts/release.sh <versione>`
 
