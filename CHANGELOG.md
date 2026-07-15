@@ -4,6 +4,8 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+## [v1.0.0] - 2026-07-15
+
 ### Fix
 - `docker-compose.override.yml` non sostituiva la porta host del DB ma la
   aggiungeva a quella di default (5432): docker compose concatena le liste
