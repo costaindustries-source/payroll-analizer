@@ -82,18 +82,15 @@ def _determine_status(dto: PayrollDocumentDTO) -> DocumentStatus:
 def _destination_path(
     settings: Settings, status: DocumentStatus, dto: PayrollDocumentDTO, filename: str, sha256: str
 ) -> Path:
-    # Un documento senza periodo riconosciuto (o FAILED) puo' essere rielaborato
-    # piu' volte con lo stesso original_filename ma contenuto (e sha256) diverso
-    # (v. issue GH #2): senza il prefisso hash, shutil.move sovrascriverebbe
-    # silenziosamente il tentativo precedente sullo stesso path, rompendo la
-    # tracciabilita' file<->record anche se il DB resta corretto (dedup per
-    # sha256). Il path anno/mese non ha lo stesso rischio pratico: un documento
-    # con periodo riconosciuto e' gia' un esito terminale positivo, non viene
-    # rielaborato con contenuto diverso allo stesso modo.
+    # Qualunque esito puo' ricevere due documenti distinti (sha256 diversi, es.
+    # cedolini di persone/aziende diverse) con lo stesso original_filename nello
+    # stesso path di destinazione (v. issue GH #2 e #19): il prefisso hash evita
+    # che il secondo shutil.move sovrascriva silenziosamente il file del primo
+    # documento gia' processato, anche quando il periodo e' stato riconosciuto.
     if status == DocumentStatus.FAILED:
         return settings.error_dir / f"{sha256[:8]}_{filename}"
     if dto.period.mese and dto.period.anno:
-        return settings.processed_dir / str(dto.period.anno) / f"{dto.period.mese:02d}" / filename
+        return settings.processed_dir / str(dto.period.anno) / f"{dto.period.mese:02d}" / f"{sha256[:8]}_{filename}"
     return settings.processed_dir / "non_riconosciuti" / f"{sha256[:8]}_{filename}"
 
 
@@ -145,35 +142,47 @@ def process_document(settings: Settings, session_factory, run_id: str, pdf_path:
         dto.anomalies.extend(validate(dto))
         status = _determine_status(dto)
 
-        with session_scope(session_factory) as session:
-            document = save_document(
-                session,
-                sha256=digest,
-                original_filename=pdf_path.name,
-                status=status.value,
-                template_name=dto.template_name,
-                parser_version=PARSER_VERSION,
-                source_used_ocr=ocr_used,
-                dto=dto,
-                raw=raw,
-            )
-            session.add(
-                AuditEvent(
-                    document_id=document.id,
-                    run_id=run_id,
-                    event_type="document_processed",
-                    detail={"status": status.value, "anomalies": len(dto.anomalies)},
-                )
-            )
-            document_uuid = document.id
-
+        # Il file va spostato PRIMA di committare il record: se il move fallisce
+        # (permessi, disco pieno, ...) l'eccezione risale a run_batch senza che
+        # nessuna riga sia mai stata scritta, cosi' status=PROCESSED implica
+        # sempre file presente su disco (v. issue GH #18 - in precedenza il
+        # commit avveniva prima del move, lasciando il DB con status=PROCESSED
+        # e processed_path=NULL se il move falliva, e bloccando il reprocessing
+        # per via del vincolo UNIQUE su sha256).
         destination = _destination_path(settings, status, dto, pdf_path.name, digest)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(pdf_path), str(destination))
 
-        with session_scope(session_factory) as session:
-            document = session.get(PayrollDocument, document_uuid)
-            document.processed_path = str(destination)
+        try:
+            with session_scope(session_factory) as session:
+                document = save_document(
+                    session,
+                    sha256=digest,
+                    original_filename=pdf_path.name,
+                    status=status.value,
+                    template_name=dto.template_name,
+                    parser_version=PARSER_VERSION,
+                    source_used_ocr=ocr_used,
+                    dto=dto,
+                    raw=raw,
+                )
+                document.processed_path = str(destination)
+                session.add(
+                    AuditEvent(
+                        document_id=document.id,
+                        run_id=run_id,
+                        event_type="document_processed",
+                        detail={"status": status.value, "anomalies": len(dto.anomalies)},
+                    )
+                )
+                document_uuid = document.id
+        except Exception:
+            # Il file e' gia' stato spostato ma la riga non e' stata scritta: lo
+            # riportiamo al path originale cosi' che _write_error_sidecar (che
+            # opera su pdf_path) trovi il file dove si aspetta di trovarlo,
+            # invece di fallire a sua volta e interrompere l'intero batch.
+            shutil.move(str(destination), str(pdf_path))
+            raise
 
         log.info(
             "document_processed",
