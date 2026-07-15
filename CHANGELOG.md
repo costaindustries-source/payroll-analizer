@@ -4,6 +4,19 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+### Aggiunto
+- Suite pytest completa su `payroll_ingest` e `payroll_cli` (516 test, 99% di
+  coverage aggregata, ogni file >=96%): copre i moduli che prima non avevano
+  alcun test dedicato (repository, orchestrator, cli, exporter, coverage,
+  templates/zucchetti.py, e l'intero pacchetto `payroll_cli`).
+- `tests/conftest.py`: fixture `db_session`/`db_session_factory`/`db_engine`
+  su uno schema Postgres isolato e usa-e-getta, per i test che toccano il
+  database (i modelli usano tipi `JSONB`/`UUID` dialect-specific,
+  incompatibili con SQLite) senza mai usare lo schema `public` reale.
+- `scripts/check_coverage.py`: gate di coverage **per-file** >=80% (non solo
+  la media aggregata), integrato in `.github/workflows/ci.yml` insieme a un
+  service container Postgres.
+
 ## [v1.1.0] - 2026-07-15
 
 ### Fix
