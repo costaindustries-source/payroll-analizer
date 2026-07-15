@@ -21,6 +21,15 @@ class RepoNotFoundError(RuntimeError):
     pass
 
 
+class InvalidMachineConfigError(RuntimeError):
+    pass
+
+
+_VALID_ROLES = {"source", "node"}
+_MIN_PORT = 1
+_MAX_PORT = 65535
+
+
 def find_repo_root(start: Path | None = None) -> Path:
     """Risale da `start` (default: cwd) fino a trovare la radice del repo.
 
@@ -61,7 +70,14 @@ class MachineConfig:
 
 
 def load_machine_config(repo_root: Path) -> MachineConfig | None:
-    """None se la macchina non e' ancora stata configurata (`payroll setup`)."""
+    """None se la macchina non e' ancora stata configurata (`payroll setup`).
+
+    `payroll.local.toml` e' scritto esclusivamente da `payroll setup` (non
+    versionato): le validazioni sotto servono solo a dare un errore chiaro se
+    il file viene modificato a mano in modo malformato, invece di propagare un
+    valore silenziosamente sbagliato a valle (es. in `docker compose`/confronti
+    di stringa) - v. issue GH #23.
+    """
     config_path = repo_root / _LOCAL_CONFIG_NAME
     if not config_path.is_file():
         return None
@@ -70,10 +86,24 @@ def load_machine_config(repo_root: Path) -> MachineConfig | None:
     db = data.get("db", {})
     update = data.get("update", {})
     cleanup = data.get("cleanup", {})
+
+    role = machine.get("role", "node")
+    if role not in _VALID_ROLES:
+        raise InvalidMachineConfigError(
+            f"{config_path}: [machine].role={role!r} non valido, atteso uno tra {sorted(_VALID_ROLES)}."
+        )
+    db_host_port = db.get("host_port", 5432)
+    if isinstance(db_host_port, bool) or not isinstance(db_host_port, int) or not (
+        _MIN_PORT <= db_host_port <= _MAX_PORT
+    ):
+        raise InvalidMachineConfigError(
+            f"{config_path}: [db].host_port={db_host_port!r} non valido, atteso un intero tra {_MIN_PORT} e {_MAX_PORT}."
+        )
+
     return MachineConfig(
         name=machine.get("name", "senza-nome"),
-        role=machine.get("role", "node"),
-        db_host_port=db.get("host_port", 5432),
+        role=role,
+        db_host_port=db_host_port,
         auto_backup=update.get("auto_backup", True),
         logs_retention_days=cleanup.get("logs_retention_days", 90),
         backups_keep=cleanup.get("backups_keep", 5),

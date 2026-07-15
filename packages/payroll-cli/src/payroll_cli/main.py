@@ -29,7 +29,11 @@ def main(ctx: typer.Context) -> None:
     except context_module.RepoNotFoundError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-    machine = context_module.load_machine_config(repo_root)
+    try:
+        machine = context_module.load_machine_config(repo_root)
+    except context_module.InvalidMachineConfigError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
     ctx.obj = context_module.Context(repo_root=repo_root, machine=machine)
 
 
