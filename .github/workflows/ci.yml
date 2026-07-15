@@ -11,6 +11,11 @@ name: CI
 # Resta un gate locale/di release. Qui gira la suite pytest in tests/
 # (fixture sintetiche, issue GH #17), che copre le stesse regressioni note
 # (destination path, corruzione font) senza dati reali.
+#
+# Gate di coverage per-file >=80% (non solo aggregato, v. scripts/check_coverage.py):
+# ogni nuovo sviluppo su questo repo richiede test con questa soglia. Il
+# service container Postgres serve alla fixture `db_session`/`db_engine` di
+# tests/conftest.py (schema isolato usa-e-getta, mai dati reali).
 
 on:
   push:
@@ -21,6 +26,20 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: payroll
+          POSTGRES_PASSWORD: payroll
+          POSTGRES_DB: payroll
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U payroll"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -35,5 +54,10 @@ jobs:
       - name: Sincronizza dipendenze
         run: uv sync --all-packages
 
-      - name: Suite pytest
-        run: uv run pytest -v
+      - name: Suite pytest + coverage
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://payroll:payroll@localhost:5432/payroll
+        run: uv run pytest -v --cov=payroll_ingest --cov=payroll_cli --cov-report=term-missing
+
+      - name: Gate coverage per-file (>=80%)
+        run: uv run python scripts/check_coverage.py

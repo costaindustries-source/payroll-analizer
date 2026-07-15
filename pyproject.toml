@@ -5,8 +5,18 @@ members = ["packages/*"]
 package = false
 
 [dependency-groups]
-dev = ["pytest>=8.4.2"]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-cov>=7.1.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["packages/payroll-ingest/src"]
+pythonpath = ["packages/payroll-ingest/src", "packages/payroll-cli/src"]
+
+[tool.coverage.run]
+source = ["payroll_ingest", "payroll_cli"]
+
+[tool.coverage.report]
+skip_covered = false
+show_missing = true
