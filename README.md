@@ -210,11 +210,22 @@ corruzione font) ma con fixture sintetiche, cosi' da poter girare anche in CI
 senza dati reali:
 
 ```bash
-uv run pytest
+uv run pytest --cov=payroll_ingest --cov=payroll_cli --cov-report=term-missing
+uv run python scripts/check_coverage.py   # fallisce se un qualunque file scende sotto l'80%
 ```
 
-GitHub Actions (`.github/workflows/ci.yml`) esegue questa suite su ogni push/PR
-verso `main`. Lo smoke test sui cedolini reali resta un gate solo locale/di
+**Ogni nuovo sviluppo richiede test con coverage per-file >=80%** (non solo la
+media aggregata): `scripts/check_coverage.py` legge i dati di `coverage.py`
+dopo la run di pytest e fallisce elencando i file sotto soglia. I test che
+toccano il database usano le fixture `db_session`/`db_session_factory`/
+`db_engine` di `tests/conftest.py`: creano uno schema Postgres isolato e
+usa-e-getta su un'istanza gia' in esecuzione (locale: `docker compose up -d
+db`; CI: service container dedicato), mai lo schema `public` dove vivono i
+dati reali.
+
+GitHub Actions (`.github/workflows/ci.yml`) esegue questa suite (con service
+container Postgres) + il gate di coverage su ogni push/PR verso `main`. Lo
+smoke test sui cedolini reali resta un gate solo locale/di
 release (`payroll release new`), perche' i campioni non possono finire su
 GitHub (v. `docs/RELEASE_PROCESS.md`, "Dati reali: mai su GitHub").
 
