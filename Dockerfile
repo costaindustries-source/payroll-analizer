@@ -12,8 +12,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Binario uv ufficiale (nessuna chiamata di rete extra in build): installa le
 # dipendenze dalle versioni esatte risolte in uv.lock, non dai range aperti
-# (">=") di pyproject.toml, per una build riproducibile nel tempo.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# (">=") di pyproject.toml, per una build riproducibile nel tempo. Il tag e'
+# pinnato (coerente con la versione uv in uso in locale, v. `uv --version`)
+# perche' ":latest" riguarda il binario uv stesso, non le dipendenze applicative
+# gia' fissate da uv.lock: senza pin, una rebuild in un momento diverso
+# potrebbe usare una versione di uv diversa (issue GH #22).
+COPY --from=ghcr.io/astral-sh/uv:0.11.15 /uv /usr/local/bin/uv
 
 WORKDIR /app
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
