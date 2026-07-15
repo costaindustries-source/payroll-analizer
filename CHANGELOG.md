@@ -4,6 +4,47 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+### Fix
+- Se lo spostamento del PDF in `processed/`/`error/` falliva (permessi, disco
+  pieno, ...), il record in DB restava comunque `PROCESSED` (o
+  `PROCESSED_WITH_ANOMALIES`/`NEEDS_REVIEW`) con `processed_path=NULL`: DB e
+  filesystem disallineati, e il vincolo UNIQUE su `sha256` impediva di
+  ricaricare il documento senza cancellare prima il record a mano. Il file
+  viene ora spostato prima del commit del record (issue #18).
+- Due documenti distinti (sha256 diversi) con lo stesso `original_filename`
+  riconosciuti nello stesso anno/mese si sovrascrivevano silenziosamente in
+  `processed/<anno>/<mese>/`: il prefisso hash, gia' usato per i documenti
+  con periodo non riconosciuto o `FAILED`, ora si applica anche a questo caso
+  (issue #19).
+- `delete-document --id <uuid-malformato>` sollevava un traceback Python
+  grezzo invece di un errore coerente con gli altri casi di validazione della
+  stessa funzione (issue #20).
+- `payroll.local.toml` modificato a mano con un `role` o `db_host_port` non
+  validi produceva errori runtime a valle invece di un errore chiaro al
+  momento del caricamento della config (issue #23).
+
+### Sicurezza
+- Le credenziali Postgres in `docker-compose.yml` non erano piu' il valore
+  fisso `payroll`/`payroll`: `payroll setup` genera ora una password
+  per-macchina in `.env` (non versionato), letta da `docker-compose.yml`
+  tramite `${POSTGRES_PASSWORD:-payroll}` (il fallback resta solo per chi non
+  ha ancora rigenerato `.env`) (issue #21).
+
+### Aggiunto
+- Suite pytest in `tests/` (destination path, corruzione font Zucchetti):
+  stessa copertura degli script ad-hoc `scripts/test_issue2_*`/`test_issue4_*`
+  (rimossi), ma eseguibile anche in CI perche' usa fixture sintetiche invece
+  dei cedolini reali (issue #17).
+- Pipeline GitHub Actions (`.github/workflows/ci.yml`): esegue la suite
+  pytest su ogni push/PR verso `main`. Lo smoke test sui cedolini reali resta
+  un gate solo locale/di release, perche' i campioni non possono finire su
+  GitHub (issue #16).
+
+### Modificato
+- `Dockerfile`: il binario `uv` copiato da `ghcr.io/astral-sh/uv` e' ora
+  pinnato a `0.11.15` invece di `:latest`, per una build riproducibile nel
+  tempo (issue #22).
+
 ## [v1.0.0] - 2026-07-15
 
 ### Fix
