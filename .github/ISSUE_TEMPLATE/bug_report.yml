@@ -1,0 +1,55 @@
+name: Bug report
+description: Segnala un comportamento inatteso o un errore
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrizione
+      description: Cosa e' successo? Cosa ti aspettavi che succedesse?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Passi per riprodurre
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Versione
+      description: "Tag della release o output di `payroll --version`"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Componente
+      options:
+        - payroll-ingest (elaborazione documenti, container)
+        - payroll-cli (comandi host)
+        - Docker / docker-compose
+        - CI / test
+        - Non so
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log rilevanti
+      description: >-
+        Incolla eventuali log. Rimuovi prima ogni dato personale reale
+        (nomi, codici fiscali, importi retributivi).
+      render: shell
+    validations:
+      required: false
