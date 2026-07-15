@@ -46,7 +46,11 @@ def maybe_write_override(repo_root: Path, db_host_port: int, log=print) -> Path 
     if override_path.is_file():
         log(f"{override_path} esiste gia': non sovrascritto (verifica a mano che la porta combaci).")
         return override_path
-    content = "services:\n  db:\n    ports:\n" f'      - "127.0.0.1:{db_host_port}:5432"\n'
+    # "!override" e' necessario: docker compose concatena le liste (ports,
+    # volumes, ...) tra file invece di sostituirle, quindi senza questo tag
+    # il bind della 5432 di default resterebbe attivo insieme a questo e
+    # fallirebbe se la 5432 e' occupata (v. issue #14).
+    content = "services:\n  db:\n    ports: !override\n" f'      - "127.0.0.1:{db_host_port}:5432"\n'
     override_path.write_text(content, encoding="utf-8")
     log(f"Generato {override_path} (porta host DB: {db_host_port}).")
     return override_path

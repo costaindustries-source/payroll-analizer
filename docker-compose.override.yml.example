@@ -6,7 +6,12 @@
 #
 # Esempio reale: porta host del DB diversa dal default 5432 per evitare
 # collisioni con altri Postgres locali sulla stessa macchina.
+#
+# Il tag "!override" e' necessario: docker compose di norma CONCATENA le
+# liste (ports, volumes, ...) tra file invece di sostituirle, quindi senza
+# questo tag il bind della 5432 di default resterebbe attivo insieme a
+# quello scelto qui e fallirebbe se la 5432 e' occupata (v. issue #14).
 services:
   db:
-    ports:
+    ports: !override
       - "127.0.0.1:5433:5432"
