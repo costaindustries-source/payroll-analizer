@@ -1,12 +1,39 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
+# Aggiornamenti automatici delle dipendenze. Vedi:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # Dipendenze Python gestite da uv (pyproject.toml / uv.lock del workspace).
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "weekly"
-      
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      # Un'unica PR settimanale per tutti gli aggiornamenti minor/patch:
+      # progetto a manutenzione singola, meno rumore da revisionare.
+      python-dependencies:
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore"
+
+  # Versioni delle GitHub Actions usate nei workflow (.github/workflows/*.yml).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
