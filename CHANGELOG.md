@@ -4,6 +4,8 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+## [v1.1.0] - 2026-07-15
+
 ### Fix
 - Se lo spostamento del PDF in `processed/`/`error/` falliva (permessi, disco
   pieno, ...), il record in DB restava comunque `PROCESSED` (o
