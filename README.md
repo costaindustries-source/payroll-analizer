@@ -16,18 +16,11 @@ Il progetto è un workspace uv con due pacchetti in `packages/`:
 - `payroll-ingest` — motore di dominio (parsing, DB, CLI `payroll-ingest`),
   installato **solo dentro il container** `app`. Invariato nel comportamento.
 - `payroll-cli` — CLI operativa **host** (`payroll`), pensata per girare sulla
-  macchina che ospita Docker, non nel container. Copre oggi `version`,
-  `status`, `update check/apply`, `rollback`, `help`, `setup`,
-  `db backup/restore/migrate/shell`, `cleanup`, `release new/list`. Il modello
-  è **pull**: `release new` (solo sulla macchina `role=source`, v. `payroll
-  setup`) pubblica soltanto un tag su GitHub — non deploya nulla — e ogni
-  macchina installata si aggiorna da sola con `update apply`.
-  `scripts/release.sh --deploy`/`--rollback` restano per ora l'unico modo per
-  promuovere davvero il codice su Debian (v. sezione dedicata più sotto):
-  finché quella parte del flusso non è stata validata su un aggiornamento
-  reale con `payroll update apply`, non va rimossa. `scripts/upgrade-postgres.sh`
-  è deprecato: e' un thin shim che delega a `payroll db backup`/`payroll db
-  restore` (stessa interfaccia, nessuna logica duplicata).
+  macchina che ospita Docker, non nel container. Copre `version`, `status`,
+  `update check/apply`, `rollback`, `help`, `setup`,
+  `db backup/restore/migrate/shell`, `cleanup`, `release new/list`. Processo
+  di rilascio e ruoli (`source`/`node`) descritti per intero in
+  [`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md), non ripetuti qui.
 
 ```bash
 uv sync --all-packages                    # installa entrambi i pacchetti in .venv/
@@ -238,29 +231,17 @@ uv run payroll-ingest process            # o: source .venv/bin/activate && payro
 uv run python scripts/smoke_test.py
 ```
 
-## Rilascio (Ubuntu -> GitHub -> Debian prod)
+## Rilascio (Ubuntu -> GitHub -> nodi)
 
-Due comandi coesistono, con responsabilità diverse (v. `docs/CLI_REDESIGN_PROPOSAL.md`):
+Procedura completa, ruoli, versionamento SemVer e percorso legacy in
+[`docs/RELEASE_PROCESS.md`](docs/RELEASE_PROCESS.md) — unica fonte di verità,
+non duplicata qui. Riassunto minimo:
 
 ```bash
 uv run payroll release new vX.Y.Z [-m msg]   # pubblica il tag su GitHub (solo su Ubuntu, role=source). Nessun deploy.
-uv run payroll update apply                   # su OGNI macchina (Debian inclusa): si aggiorna da sola all'ultimo tag
-uv run payroll rollback vX.Y.Z                # su una macchina: torna a un tag precedente
-
-# Ancora in vigore per il deploy verso Debian finche' il flusso sopra non e' collaudato dal vivo:
-scripts/release.sh vX.Y.Z          # rilascio completo: smoke test, tag+push, deploy Debian (con gate di conferma), smoke test post-deploy, log
-scripts/release.sh --deploy vX.Y.Z # riprende solo il deploy su Debian di un tag già pushato
-scripts/release.sh --rollback vX.Y.Z   # riporta Debian a un tag precedente
+uv run payroll update apply                   # su OGNI nodo (Debian inclusa): si aggiorna da solo all'ultimo tag
+uv run payroll rollback vX.Y.Z                # su un nodo: torna a un tag precedente
 ```
-
-`payroll release new` sostituisce solo la parte "tag + push" di
-`scripts/release.sh` (preflight, smoke test, CHANGELOG, tag, push) — non
-deploya. Finché Debian non aggiorna se stesso con `payroll update apply` in
-un caso reale, `scripts/release.sh --deploy`/`--rollback` restano il modo
-per portare davvero il codice sull'ambiente di produzione.
-
-SemVer: **patch** (`v0.1.x`) fix senza cambio schema, **minor** (`v0.2.0`)
-nuove funzionalità, **major** (`v1.0.0`) cambio schema DB non retrocompatibile.
 
 ## Risoluzione problemi comuni
 

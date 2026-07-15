@@ -1,8 +1,14 @@
 # Proposta: reingegnerizzazione completa della CLI (`payroll`)
 
-> Stato: **proposta**, non ancora implementata. Obiettivo: eliminare `scripts/release.sh` e
-> `scripts/upgrade-postgres.sh` e gestire l'intero ciclo di vita (installazione, aggiornamento,
-> manutenzione, rilascio, dominio) da un'unica CLI, su ogni macchina.
+> **Stato: implementata** (tutti i comandi sotto sono live da `v1.0.0`, 2026-07-15).
+> Questo documento resta come record di design/motivazioni storiche — per l'uso
+> operativo corrente vedi [`docs/RELEASE_PROCESS.md`](RELEASE_PROCESS.md). Il
+> piano di migrazione incrementale in §9 descrive come *era stato pensato* il
+> rollout (v0.3.0 -> v0.6.0): nei fatti si è arrivati a `v1.0.0` prima, con
+> tutte le fasi già dentro (v. `docs/RELEASE_PROCESS.md`, sezione "Percorso
+> legacy", per cosa manca ancora a `scripts/release.sh` per essere rimosso).
+> `scripts/upgrade-postgres.sh` è già un thin shim deprecato che delega a
+> `payroll db backup`/`restore` — quella parte del piano è chiusa.
 
 ## 1. Il problema del modello attuale
 
