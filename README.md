@@ -195,15 +195,28 @@ docker compose run --rm app alembic upgrade +1          # avanza di una
 docker compose run --rm app alembic downgrade -1         # torna indietro di una
 ```
 
-## Test di regressione (smoke test)
+## Test di regressione (smoke test + suite pytest)
 
-Gira sui 6 cedolini reali di riferimento in `docs/payroll-test/` (mai in git)
-dopo ogni modifica a `templates/zucchetti.py` o `extraction.py`:
+Lo smoke test gira sui 6 cedolini reali di riferimento in `docs/payroll-test/`
+(mai in git) dopo ogni modifica a `templates/zucchetti.py` o `extraction.py`:
 
 ```bash
 .venv/bin/python scripts/smoke_test.py                          # locale (Ubuntu, venv host)
 docker compose run --rm app python scripts/smoke_test.py --samples-dir /data/docs/payroll-test   # dentro il container
 ```
+
+`tests/` contiene la stessa copertura di regressioni note (destination path,
+corruzione font) ma con fixture sintetiche, cosi' da poter girare anche in CI
+senza dati reali:
+
+```bash
+uv run pytest
+```
+
+GitHub Actions (`.github/workflows/ci.yml`) esegue questa suite su ogni push/PR
+verso `main`. Lo smoke test sui cedolini reali resta un gate solo locale/di
+release (`payroll release new`), perche' i campioni non possono finire su
+GitHub (v. `docs/RELEASE_PROCESS.md`, "Dati reali: mai su GitHub").
 
 ## Sviluppo locale senza Docker (Ubuntu, gestito da `uv`)
 

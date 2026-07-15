@@ -1,0 +1,39 @@
+name: CI
+
+# Regressioni non intercettate automaticamente prima del merge/release (issue
+# GH #16): il gate automatico esisteva solo dentro `payroll release new`
+# (smoke test obbligatorio prima di taggare, v. docs/RELEASE_PROCESS.md), ma i
+# commit intermedi su main tra una release e l'altra non erano protetti.
+#
+# Lo smoke test "vero" su docs/payroll-test/*.pdf NON gira qui: sono cedolini
+# reali con CF/importi retributivi veri, gitignored e vietati su GitHub per
+# regola esplicita (v. docs/RELEASE_PROCESS.md, "Dati reali: mai su GitHub").
+# Resta un gate locale/di release. Qui gira la suite pytest in tests/
+# (fixture sintetiche, issue GH #17), che copre le stesse regressioni note
+# (destination path, corruzione font) senza dati reali.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installa uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.11.15"
+
+      - name: Installa Python
+        run: uv python install
+
+      - name: Sincronizza dipendenze
+        run: uv sync --all-packages
+
+      - name: Suite pytest
+        run: uv run pytest -v
