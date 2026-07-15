@@ -4,6 +4,8 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+## [v1.1.1] - 2026-07-15
+
 ### Aggiunto
 - Suite pytest completa su `payroll_ingest` e `payroll_cli` (516 test, 99% di
   coverage aggregata, ogni file >=96%): copre i moduli che prima non avevano
