@@ -106,6 +106,7 @@ def run(
     config_path = setup_wizard.write_config(app_ctx.repo_root, config)
     typer.echo(f"\nConfigurazione scritta in {config_path}")
     setup_wizard.maybe_write_override(app_ctx.repo_root, db_port, log=typer.echo)
+    setup_wizard.ensure_env_password(app_ctx.repo_root, log=typer.echo)
 
     if gen_deploy_key:
         _run_deploy_key(app_ctx, role)

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import secrets
 import socket
 import subprocess
 from pathlib import Path
@@ -14,6 +15,7 @@ from payroll_cli import db as db_module
 from payroll_cli.context import MachineConfig
 
 _DEFAULT_DB_PORT = 5432
+_ENV_FILE_NAME = ".env"
 
 
 def default_machine_name() -> str:
@@ -54,6 +56,24 @@ def maybe_write_override(repo_root: Path, db_host_port: int, log=print) -> Path 
     override_path.write_text(content, encoding="utf-8")
     log(f"Generato {override_path} (porta host DB: {db_host_port}).")
     return override_path
+
+
+def ensure_env_password(repo_root: Path, log=print) -> Path | None:
+    """Genera una password Postgres per-macchina in .env (non versionato) SOLO
+    se non e' gia' presente (non sovrascrive mai una personalizzazione
+    esistente, stesso principio di maybe_write_override): sostituisce il
+    valore fisso 'payroll' che prima era hardcoded in docker-compose.yml,
+    letto ora da li' via l'espansione ${POSTGRES_PASSWORD:-payroll} di
+    docker compose (v. issue GH #21)."""
+    env_path = repo_root / _ENV_FILE_NAME
+    existing = env_path.read_text(encoding="utf-8") if env_path.is_file() else ""
+    if any(line.strip().startswith("POSTGRES_PASSWORD=") for line in existing.splitlines()):
+        return None
+    password = secrets.token_urlsafe(24)
+    separator = "\n" if existing and not existing.endswith("\n") else ""
+    env_path.write_text(f"{existing}{separator}POSTGRES_PASSWORD={password}\n", encoding="utf-8")
+    log(f"Generata password Postgres per-macchina in {env_path}.")
+    return env_path
 
 
 class BootstrapError(RuntimeError):

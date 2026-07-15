@@ -4,7 +4,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: payroll
-      POSTGRES_PASSWORD: payroll
+      # Generata per-macchina da 'payroll setup' in .env (non versionato, v.
+      # .gitignore); ":-payroll" resta solo come fallback per chi non ha
+      # ancora rigenerato .env (issue GH #21).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payroll}
       POSTGRES_DB: payroll
     volumes:
       - db_data_pg17:/var/lib/postgresql/data
@@ -25,7 +28,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+psycopg://payroll:payroll@db:5432/payroll
+      DATABASE_URL: postgresql+psycopg://payroll:${POSTGRES_PASSWORD:-payroll}@db:5432/payroll
       PAYROLL_BASE_DIR: /data
     volumes:
       - ./input:/data/input
