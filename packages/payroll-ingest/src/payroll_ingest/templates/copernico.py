@@ -98,10 +98,12 @@ _PERIOD_TREDICESIMA_COMPACT_RE = re.compile(r"13[-]?esima(\d{4})", re.IGNORECASE
 _VOCI_START_MARKER_A = normalize_label("Descrizione")
 _VOCI_START_MARKER_B = normalize_label("Competenze")
 _VOCI_END_NORM = normalize_label("Totale Ritenute Sociali")
-# Prefisso lettera opzionale: alcune voci hanno codice causale alfanumerico
-# (es. "F2905 Contatore Premi in Natura al mese prec.", 5/57 file - issue #29),
-# non solo numerico a 4 cifre come la maggioranza.
-_CODICE_RE = re.compile(r"^[A-Z]?\d{4}$")
+# Prefisso lettera opzionale (es. "F2905 Contatore Premi in Natura al mese
+# prec.", 5/57 file - issue #29) o interamente alfabetico (es. "CTRAGG
+# Contributo Aggiuntivo"/"CTRAGG Conguaglio a credito CTRAGG", conguaglio
+# raro ma con importo reale, 1/57 file - issue #30): non solo numerico a 4
+# cifre come la maggioranza delle voci.
+_CODICE_RE = re.compile(r"^([A-Z]?\d{4}|[A-Z]{5,8})$")
 _FIGURATIVO_FLAG = "F"
 
 # Trattenuta INPS Contributo FAP (Fondo Pensioni Complementare): riga a

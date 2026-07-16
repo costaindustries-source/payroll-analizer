@@ -312,6 +312,52 @@ def test_parse_pay_line_row_unit_token_nella_descrizione_non_la_tronca():
     assert line.competenza == Decimal("21.34")
 
 
+def test_parse_pay_line_row_codice_interamente_alfabetico_ctragg():
+    # "CTRAGG Contributo Aggiuntivo 1,000 3.154,00000 31,54" (issue #30):
+    # codice causale interamente alfabetico (6 lettere), non numerico.
+    row = Row(
+        top=100.0,
+        words=[
+            w("CTRAGG", 23.5),
+            w("Contributo", 55.0),
+            w("Aggiuntivo", 90.7),
+            w("1,000", 295.0),
+            w("3.154,00000", 362.4),
+            w("31,54", 464.1),
+        ],
+    )
+    line = c._parse_pay_line_row(row)
+    assert line is not None
+    assert line.codice == "CTRAGG"
+    assert line.descrizione == "Contributo Aggiuntivo"
+    assert line.importo_base == Decimal("3154.00000")
+    assert line.trattenuta == Decimal("31.54")
+
+
+def test_parse_pay_line_row_ctragg_conguaglio_a_credito_importo_negativo():
+    # Riga gemella di conguaglio, stesso codice causale ripetuto anche nella
+    # descrizione, importo base negativo (credito): "CTRAGG Conguaglio a
+    # credito CTRAGG -3.154,00000 31,54".
+    row = Row(
+        top=110.0,
+        words=[
+            w("CTRAGG", 23.5),
+            w("Conguaglio", 55.0),
+            w("a", 93.4),
+            w("credito", 98.9),
+            w("CTRAGG", 122.2),
+            w("-3.154,00000", 359.5),
+            w("31,54", 540.8),
+        ],
+    )
+    line = c._parse_pay_line_row(row)
+    assert line is not None
+    assert line.codice == "CTRAGG"
+    assert line.descrizione == "Conguaglio a credito CTRAGG"
+    assert line.importo_base == Decimal("3154.00000")
+    assert line.competenza == Decimal("31.54")
+
+
 def test_parse_pay_line_row_unit_token_nella_descrizione_non_confuso_con_dato_base():
     # "0299 BANCA ORE GODUTE 4,00 F": stesso rischio del caso precedente ma
     # senza fallire del tutto - con il vecchio confine per contenuto la
