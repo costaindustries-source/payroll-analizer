@@ -102,6 +102,12 @@ _VOCI_END_NORM = normalize_label("Totale Ritenute Sociali")
 _CODICE_RE = re.compile(r"^\d{4}$")
 _FIGURATIVO_FLAG = "F"
 
+# Trattenuta INPS Contributo FAP (Fondo Pensioni Complementare): riga a
+# etichetta testuale fissa (aliquota 9,490 / imponibile / importo), non a
+# codice causale a 4 cifre come le altre voci - presente su 20/20 cedolini
+# Copernico verificati, mai mappata prima (issue GH #28).
+_INPS_FAP_LABEL_NORM = normalize_label("INPS Contributo FAP")
+
 # Soglie x0 calibrate su docs/new-templates/2016/201610.pdf (PDFsharp) e
 # 2018/201804.pdf (Win2PDF ricostruito), v. piano §2.1. Il layout non cambia
 # tra i due producer, solo il rendering del font. Tutto cio' che sta a sinistra
@@ -358,6 +364,29 @@ def _parse_pay_line_row(row: Row) -> PayLineDTO | None:
     )
 
 
+def _parse_inps_fap_row(row: Row) -> PayLineDTO | None:
+    """Riga a etichetta fissa 'INPS Contributo FAP' seguita da tre importi
+    (aliquota, imponibile, importo trattenuto), non dal codice causale a 4
+    cifre delle altre voci - v. _INPS_FAP_LABEL_NORM."""
+    if not normalize_label(row.text).startswith(_INPS_FAP_LABEL_NORM):
+        return None
+    amounts = [v for w in row.words if (v := parse_amount(w.text)) is not None]
+    if len(amounts) < 3:
+        return None
+    aliquota, imponibile, importo = amounts[0], amounts[1], amounts[2]
+    return PayLineDTO(
+        codice=None,
+        descrizione="INPS Contributo FAP",
+        categoria=PayLineCategory.CONTRIBUTO,
+        is_recognized=True,
+        importo_base=abs(imponibile),
+        aliquota=aliquota,
+        trattenuta=abs(importo),
+        raw_text=row.text,
+        classification=DataClassification.OPZIONALE,
+    )
+
+
 def _extract_pay_lines_from_page(rows: list[Row]) -> tuple[list[PayLineDTO], list[str]]:
     pay_lines: list[PayLineDTO] = []
     unmapped: list[str] = []
@@ -370,7 +399,7 @@ def _extract_pay_lines_from_page(rows: list[Row]) -> tuple[list[PayLineDTO], lis
             continue
         if _VOCI_END_NORM in norm:
             break
-        parsed = _parse_pay_line_row(row)
+        parsed = _parse_pay_line_row(row) or _parse_inps_fap_row(row)
         if parsed is not None:
             pay_lines.append(parsed)
         elif row.text.strip():

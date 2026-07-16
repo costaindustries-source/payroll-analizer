@@ -266,6 +266,33 @@ def test_parse_pay_line_row_senza_descrizione():
 
 
 # ---------------------------------------------------------------------------
+# _parse_inps_fap_row
+# ---------------------------------------------------------------------------
+
+
+def test_parse_inps_fap_row_riconosce_pattern():
+    row = trow(310.0, "INPS Contributo FAP 9,490 2.324,00000 220,55")
+    line = c._parse_inps_fap_row(row)
+    assert line is not None
+    assert line.codice is None
+    assert line.descrizione == "INPS Contributo FAP"
+    assert line.categoria.value == "contributo"
+    assert line.aliquota == Decimal("9.490")
+    assert line.importo_base == Decimal("2324.00000")
+    assert line.trattenuta == Decimal("220.55")
+
+
+def test_parse_inps_fap_row_etichetta_diversa_non_matcha():
+    row = trow(100.0, "Imponibile Previdenziale Non Arrotondato 2.324,37")
+    assert c._parse_inps_fap_row(row) is None
+
+
+def test_parse_inps_fap_row_meno_di_tre_importi_non_matcha():
+    row = trow(100.0, "INPS Contributo FAP 9,490")
+    assert c._parse_inps_fap_row(row) is None
+
+
+# ---------------------------------------------------------------------------
 # _extract_pay_lines_from_page
 # ---------------------------------------------------------------------------
 
@@ -282,6 +309,19 @@ def test_extract_pay_lines_from_page_delimita_sezione_e_scarta_boilerplate():
     assert len(pay_lines) == 1
     assert pay_lines[0].codice == "0001"
     assert unmapped == ["Imponibile Previdenziale Non Arrotondato"]
+
+
+def test_extract_pay_lines_from_page_riconosce_riga_inps_fap():
+    rows = [
+        trow(255.0, "Cod. Descrizione Ore/GG % Dato Base Ritenute Competenze"),
+        Row(top=264.0, words=[w("0001", 20), w("RETRIBUZIONE", 55), w("1.500,00", 529)]),
+        trow(310.0, "INPS Contributo FAP 9,490 2.324,00000 220,55"),
+        trow(325.0, "Totale Ritenute Sociali"),
+    ]
+    pay_lines, unmapped = c._extract_pay_lines_from_page(rows)
+    assert len(pay_lines) == 2
+    assert pay_lines[1].descrizione == "INPS Contributo FAP"
+    assert unmapped == []
 
 
 def test_extract_pay_lines_from_page_senza_header_restituisce_vuoto():
