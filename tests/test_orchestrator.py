@@ -5,12 +5,7 @@ mockiamo le funzioni di estrazione/classificazione/mappatura importate da
 orchestrator (classify_pdf, extract_document, find_template - v.
 _mock_zucchetti_dispatch) e usiamo file con bytes qualunque solo per
 sha256_file. Ogni
-test usa `Settings(PAYROLL_BASE_DIR=tmp_path)`, mai le cartelle reali del repo.
-NOTA: il campo si chiama `base_dir` ma ha alias Pydantic "PAYROLL_BASE_DIR" e
-populate_by_name non e' abilitato in config.py: passare `base_dir=` al
-costruttore viene silenziosamente ignorato e Settings ricade sul default
-"." (repo reale!). Va sempre usato l'alias per costruire Settings con un
-base_dir custom."""
+test usa `Settings(PAYROLL_BASE_DIR=tmp_path)`, mai le cartelle reali del repo."""
 
 import json
 import random
