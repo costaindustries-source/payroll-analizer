@@ -12,7 +12,10 @@ def _settings_for(db_engine) -> Settings:
     # Un nuovo engine puntato alla stessa URL del Postgres di test: non serve
     # passare per lo schema isolato (make_engine non crea/legge tabelle, solo
     # una connessione), quindi non c'e' rischio di toccare dati reali.
-    return Settings(database_url=str(db_engine.url))
+    # render_as_string(hide_password=False) e' necessario perche' str(url) in
+    # SQLAlchemy 2.x maschera la password con '***', causando un errore di
+    # autenticazione quando si crea un nuovo engine con questo URL.
+    return Settings(database_url=db_engine.url.render_as_string(hide_password=False))
 
 
 def test_make_engine_returns_working_connection(db_engine):
