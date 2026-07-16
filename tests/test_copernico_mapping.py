@@ -260,6 +260,72 @@ def test_parse_pay_line_row_senza_codice_valido():
     assert c._parse_pay_line_row(row) is None
 
 
+def test_parse_pay_line_row_codice_con_prefisso_lettera():
+    # "F2905 Contatore Premi in Natura al mese prec. 75,00 F" (5/57 file, issue #29):
+    # codice alfanumerico, non solo numerico a 4 cifre.
+    row = Row(
+        top=100.0,
+        words=[
+            w("F2905", 28.8),
+            w("Contatore", 55.0),
+            w("Premi", 87.6),
+            w("in", 108.0),
+            w("Natura", 115.9),
+            w("al", 139.7),
+            w("mese", 147.3),
+            w("prec.", 164.9),
+            w("75,00", 540.7),
+            w("F", 565.0),
+        ],
+    )
+    line = c._parse_pay_line_row(row)
+    assert line is not None
+    assert line.codice == "F2905"
+    assert line.descrizione == "Contatore Premi in Natura al mese prec."
+    assert line.competenza == Decimal("75.00")
+    assert line.note == "valore esclusivamente figurativo (non concorre al netto)"
+
+
+def test_parse_pay_line_row_unit_token_nella_descrizione_non_la_tronca():
+    # "0282 ORE STRAORD.60% MESE PRECEDENTE 1,00 21,34289 21,34" (issue #29):
+    # "ORE" e' un unit token (v. UNIT_TOKENS) ma qui e' parte della descrizione,
+    # non del dato - il confine descrizione/dati va deciso per posizione (x0),
+    # non per contenuto della parola, altrimenti la riga risulta senza
+    # descrizione e viene scartata per intero.
+    row = Row(
+        top=100.0,
+        words=[
+            w("0282", 30.7),
+            w("ORE", 55.0),
+            w("STRAORD.60%", 72.7),
+            w("MESE", 128.1),
+            w("PRECEDENTE", 150.9),
+            w("1,00", 243.4),
+            w("21,34289", 373.9),
+            w("21,34", 540.7),
+        ],
+    )
+    line = c._parse_pay_line_row(row)
+    assert line is not None
+    assert line.descrizione == "ORE STRAORD.60% MESE PRECEDENTE"
+    assert line.quantita == Decimal("1.00")
+    assert line.competenza == Decimal("21.34")
+
+
+def test_parse_pay_line_row_unit_token_nella_descrizione_non_confuso_con_dato_base():
+    # "0299 BANCA ORE GODUTE 4,00 F": stesso rischio del caso precedente ma
+    # senza fallire del tutto - con il vecchio confine per contenuto la
+    # descrizione risultava troncata a "BANCA" invece di "BANCA ORE GODUTE".
+    row = Row(
+        top=100.0,
+        words=[w("0299", 30.7), w("BANCA", 55.0), w("ORE", 84.2), w("GODUTE", 102.0), w("4,00", 243.4), w("F", 565.0)],
+    )
+    line = c._parse_pay_line_row(row)
+    assert line is not None
+    assert line.descrizione == "BANCA ORE GODUTE"
+    assert line.quantita == Decimal("4.00")
+
+
 def test_parse_pay_line_row_senza_descrizione():
     row = Row(top=100.0, words=[w("0001", 20), w("1.500,00", 374)])
     assert c._parse_pay_line_row(row) is None

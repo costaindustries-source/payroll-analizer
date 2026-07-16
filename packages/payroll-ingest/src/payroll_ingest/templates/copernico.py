@@ -38,7 +38,6 @@ from payroll_ingest.templates._common import (
     codice_fiscale_checksum_valido,
     first_amount,
     iban_mod97_valid,
-    looks_like_data,
     match_column_values,
 )
 from payroll_ingest.templates._spec import TemplateSpec
@@ -99,7 +98,10 @@ _PERIOD_TREDICESIMA_COMPACT_RE = re.compile(r"13[-]?esima(\d{4})", re.IGNORECASE
 _VOCI_START_MARKER_A = normalize_label("Descrizione")
 _VOCI_START_MARKER_B = normalize_label("Competenze")
 _VOCI_END_NORM = normalize_label("Totale Ritenute Sociali")
-_CODICE_RE = re.compile(r"^\d{4}$")
+# Prefisso lettera opzionale: alcune voci hanno codice causale alfanumerico
+# (es. "F2905 Contatore Premi in Natura al mese prec.", 5/57 file - issue #29),
+# non solo numerico a 4 cifre come la maggioranza.
+_CODICE_RE = re.compile(r"^[A-Z]?\d{4}$")
 _FIGURATIVO_FLAG = "F"
 
 # Trattenuta INPS Contributo FAP (Fondo Pensioni Complementare): riga a
@@ -116,6 +118,15 @@ _INPS_FAP_LABEL_NORM = normalize_label("INPS Contributo FAP")
 DATO_BASE_MIN = 345.0
 RITENUTE_MIN = 420.0
 COMPETENZE_MIN = 503.0
+# Soglia description->dati: verificata sui 32 file Copernico che l'ultima
+# parola di descrizione osservata sta a x0<=164.9 ("prec." di "F2905 Contatore
+# Premi in Natura al mese prec.") e la prima colonna dati (Ore/GG) parte
+# sempre da x0>=241.0, ampio margine su entrambi i lati - v. issue GH #29:
+# usare il CONTENUTO della parola (era: prima parola che "sembra un dato",
+# looks_like_data) tronca/svuota la descrizione quando questa contiene per
+# caso un unit token ("ORE" in "0282 ORE STRAORD.60% MESE PRECEDENTE" o
+# "0299 BANCA ORE GODUTE"), quindi il confine va deciso per POSIZIONE.
+ORE_GG_MIN = 200.0
 
 # --- Tax ------------------------------------------------------------------
 
@@ -311,7 +322,7 @@ def _parse_pay_line_row(row: Row) -> PayLineDTO | None:
 
     data_start = len(words)
     for i in range(1, len(words)):
-        if looks_like_data(words[i].text):
+        if words[i].x0 >= ORE_GG_MIN:
             data_start = i
             break
     desc_words = words[1:data_start]
