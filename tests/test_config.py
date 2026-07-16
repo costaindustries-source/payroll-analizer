@@ -18,16 +18,19 @@ def test_settings_defaults():
 
 
 def test_settings_derived_paths_use_base_dir(tmp_path):
-    # base_dir ha alias "PAYROLL_BASE_DIR": senza populate_by_name, passare il
-    # nome python "base_dir=" al costruttore viene ignorato (extra="ignore")
-    # e resta il default Path(".") - va passato l'alias.
-    settings = Settings(PAYROLL_BASE_DIR=tmp_path)
+    settings = Settings(base_dir=tmp_path)
     assert settings.input_dir == tmp_path / "input"
     assert settings.processed_dir == tmp_path / "processed"
     assert settings.error_dir == tmp_path / "error"
     assert settings.logs_dir == tmp_path / "logs"
     assert settings.export_dir == tmp_path / "export"
     assert settings.work_dir == tmp_path / "work"
+
+
+def test_settings_accepts_python_names_for_aliased_fields(tmp_path):
+    settings = Settings(base_dir=tmp_path, database_url="******host:5432/db")
+    assert settings.base_dir == tmp_path
+    assert settings.database_url == "******host:5432/db"
 
 
 def test_settings_ensure_folders_creates_all_dirs(tmp_path):
