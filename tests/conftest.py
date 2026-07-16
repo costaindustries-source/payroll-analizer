@@ -42,10 +42,18 @@ def db_engine():
 
     engine = create_engine(base_url, future=True)
 
+    # SOLO lo schema di test, senza 'public' come fallback: se 'public' ha
+    # gia' le stesse tabelle (dati reali di sviluppo), Base.metadata.create_all
+    # le trova via search_path e non le ricrea nello schema isolato - ogni
+    # query successiva ricade quindi silenziosamente su 'public' (issue #25,
+    # scoperta investigando un batch che sembrava corrompere dati reali). Le
+    # tabelle non dipendono da nessuna estensione/funzione definita solo in
+    # public (UUID generati Python-side, created_at con NOW() built-in), quindi
+    # rimuoverlo dal search_path e' sicuro.
     @event.listens_for(engine, "connect")
     def _set_search_path(dbapi_connection, connection_record):  # noqa: ARG001
         cursor = dbapi_connection.cursor()
-        cursor.execute(f'SET search_path TO "{schema}", public')
+        cursor.execute(f'SET search_path TO "{schema}"')
         cursor.close()
 
     Base.metadata.create_all(engine)
