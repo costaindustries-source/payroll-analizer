@@ -856,15 +856,28 @@ def test_map_document_data_assunzione_sintatticamente_valida_ma_calendario_inval
     assert any(a.tipo == "data_non_valida" for a in dto.anomalies)
 
 
-def test_map_document_righe_non_mappate_generano_anomalia_info():
+def test_map_document_righe_non_mappate_con_importo_generano_anomalia_info():
+    rows = [
+        trow(260.0, "IMPORTO BASE RIFERIMENTO TRATTENUTE COMPETENZE"),
+        trow(270.0, "Voce non riconosciuta 123,45"),
+        trow(280.0, "Retribuzione utile T.F.R."),
+    ]
+    dto = z.map_document(_doc(rows))
+    anomalia = next(a for a in dto.anomalies if a.tipo == "righe_non_mappate")
+    assert "1 righe con importo non mappate (su 1 righe totali" in anomalia.messaggio
+    assert dto.unrecognized_row_texts == ["Voce non riconosciuta 123,45"]
+
+
+def test_map_document_righe_non_mappate_senza_importo_non_generano_anomalia():
+    # issue #32: puro rumore testuale (nessun importo) non deve far scattare
+    # l'anomalia, pur restando in unrecognized_row_texts.
     rows = [
         trow(260.0, "IMPORTO BASE RIFERIMENTO TRATTENUTE COMPETENZE"),
         trow(270.0, "Testo sconosciuto senza codice causale"),
         trow(280.0, "Retribuzione utile T.F.R."),
     ]
     dto = z.map_document(_doc(rows))
-    anomalia = next(a for a in dto.anomalies if a.tipo == "righe_non_mappate")
-    assert "1 righe" in anomalia.messaggio
+    assert not any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
     assert dto.unrecognized_row_texts == ["Testo sconosciuto senza codice causale"]
 
 

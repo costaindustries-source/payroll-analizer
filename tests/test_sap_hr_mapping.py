@@ -711,13 +711,27 @@ def test_map_document_periodo_non_riconosciuto():
     assert any(a.tipo == "periodo_non_riconosciuto" for a in dto.anomalies)
 
 
-def test_map_document_righe_non_mappate():
+def test_map_document_righe_non_mappate_puro_rumore_non_genera_anomalia():
+    # "CTB. DED. CTB.NON DED." - fragment di intestazione colonna presente
+    # identico su 23/23 file SAP HR ordinari reali, senza alcun importo:
+    # issue #32, non deve piu' far scattare l'anomalia (rumore innocuo).
     rows = _happy_path_rows()
     idx = rows.index(next(r for r in rows if r.text == "ADDIZIONALI ANNO IMPON/RATA"))
     rows.insert(idx, trow(429.0, "CTB. DED. CTB.NON DED."))
     doc = _doc(rows)
     dto = s.map_document(doc)
-    assert any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
+    assert not any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
+    assert "CTB. DED. CTB.NON DED." in dto.unrecognized_row_texts
+
+
+def test_map_document_righe_non_mappate_con_importo_genera_anomalia():
+    rows = _happy_path_rows()
+    idx = rows.index(next(r for r in rows if r.text == "ADDIZIONALI ANNO IMPON/RATA"))
+    rows.insert(idx, trow(429.0, "Voce non riconosciuta 123,45"))
+    doc = _doc(rows)
+    dto = s.map_document(doc)
+    anomalia = next(a for a in dto.anomalies if a.tipo == "righe_non_mappate")
+    assert "1 righe con importo non mappate (su 1 righe totali" in anomalia.messaggio
 
 
 def test_map_document_totali_mancanti_forza_error():

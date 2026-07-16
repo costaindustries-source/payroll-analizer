@@ -41,6 +41,7 @@ from payroll_ingest.templates._common import (
     iban_mod97_valid as _iban_mod97_valid,
     looks_like_data as _looks_like_data,
     match_column_values,
+    rows_with_numeric_value as _rows_with_numeric_value,
 )
 from payroll_ingest.templates._spec import TemplateSpec
 
@@ -815,12 +816,16 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
                 campo="hire_date",
             )
         )
-    if unmapped_rows:
+    righe_con_importo = _rows_with_numeric_value(unmapped_rows)
+    if righe_con_importo:
         dto.anomalies.append(
             AnomalyDTO(
                 tipo="righe_non_mappate",
                 severita=AnomalySeverity.INFO,
-                messaggio=f"{len(unmapped_rows)} righe nella sezione voci non sono state mappate",
+                messaggio=(
+                    f"{len(righe_con_importo)} righe con importo non mappate "
+                    f"(su {len(unmapped_rows)} righe totali non riconosciute nella sezione voci)"
+                ),
                 campo="pay_lines",
             )
         )

@@ -9,7 +9,7 @@ from pathlib import Path
 from payroll_ingest.dto import PeriodType
 from payroll_ingest.extraction import RawExtractedDocument, RawPage, Row, Word
 from payroll_ingest.templates import copernico as c
-from payroll_ingest.templates._common import iban_mod97_valid
+from payroll_ingest.templates._common import iban_mod97_valid, rows_with_numeric_value
 
 
 def w(text: str, x0: float, top: float = 100.0) -> Word:
@@ -45,6 +45,24 @@ def _iban_parts_valido() -> tuple[str, str, str, str, str]:
 
 CF_VALIDO = "RSSMRA80A01H501U"
 CF_CHECKSUM_ERRATO = "RSSMRA80A01H501A"
+
+
+# ---------------------------------------------------------------------------
+# rows_with_numeric_value (_common.py, issue #32)
+# ---------------------------------------------------------------------------
+
+
+def test_rows_with_numeric_value_filtra_solo_le_righe_con_un_importo():
+    rows = [
+        "CTB. DED. CTB.NON DED.",
+        "Imponibile Previdenziale Non Arrotondato 2.324,37",
+        "Dal 01/07/2019 Al 31/07/2019",
+    ]
+    assert rows_with_numeric_value(rows) == ["Imponibile Previdenziale Non Arrotondato 2.324,37"]
+
+
+def test_rows_with_numeric_value_lista_vuota_se_nessun_importo():
+    assert rows_with_numeric_value(["Solo testo", "Altro testo senza numeri"]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -773,14 +791,26 @@ def test_map_document_periodo_non_riconosciuto():
     assert any(a.tipo == "periodo_non_riconosciuto" for a in dto.anomalies)
 
 
-def test_map_document_righe_non_mappate():
+def test_map_document_righe_non_mappate_con_importo_genera_anomalia():
     rows = _happy_path_rows() + []
-    # Inserisce una riga di boilerplate senza codice tra header e fine sezione.
+    # Riga di boilerplate senza codice ma con un importo reale (issue #32:
+    # solo le righe con un valore numerico sono un candidato a perdita di
+    # dato, non il puro rumore testuale - v. test sotto).
+    idx = rows.index(next(r for r in rows if r.text == "Totale Ritenute Sociali"))
+    rows.insert(idx, trow(300.0, "Imponibile Previdenziale Non Arrotondato 2.324,37"))
+    doc = _doc(rows)
+    dto = c.map_document(doc)
+    anomalia = next(a for a in dto.anomalies if a.tipo == "righe_non_mappate")
+    assert "1 righe con importo non mappate (su 1 righe totali" in anomalia.messaggio
+
+
+def test_map_document_righe_non_mappate_senza_importo_non_genera_anomalia():
+    rows = _happy_path_rows() + []
     idx = rows.index(next(r for r in rows if r.text == "Totale Ritenute Sociali"))
     rows.insert(idx, trow(300.0, "Imponibile Previdenziale Non Arrotondato"))
     doc = _doc(rows)
     dto = c.map_document(doc)
-    assert any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
+    assert not any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
 
 
 def test_map_document_testo_ricostruito():

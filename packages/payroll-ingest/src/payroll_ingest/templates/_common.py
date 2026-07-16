@@ -27,6 +27,17 @@ def looks_like_data(text: str) -> bool:
     return text in UNIT_TOKENS or text in PAREN_MARKERS or parse_amount(text) is not None
 
 
+def rows_with_numeric_value(texts: list[str]) -> list[str]:
+    """Filtra le righe che contengono almeno un token con la forma di un
+    importo/numero: usato per distinguere, tra le righe non riconosciute
+    della sezione voci, quelle con un dato economico candidato a perdita
+    reale da quelle puramente testuali (header di colonna, riga di
+    intestazione periodo) - rumore innocuo che altrimenti fa scattare
+    l'anomalia 'righe_non_mappate' anche quando non c'e' nessuna perdita
+    (issue GH #32)."""
+    return [text for text in texts if any(parse_amount(token) is not None for token in text.split())]
+
+
 def first_amount(words: list[Word]) -> Decimal | None:
     for w in words:
         if w.text in PAREN_MARKERS:
