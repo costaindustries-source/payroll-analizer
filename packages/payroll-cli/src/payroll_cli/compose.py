@@ -4,6 +4,7 @@ dalla directory da cui e' stato invocato `payroll`)."""
 
 from __future__ import annotations
 
+import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -64,8 +65,29 @@ def app_image_created_at(repo_root: Path) -> datetime | None:
     esiste ancora, o se docker/l'immagine non sono raggiungibili): usato per
     avvisare quando il codice in packages/ e' piu' recente della build (GH #26,
     'docker compose run' riusa l'immagine stale senza avviso)."""
-    images = _run(repo_root, ["config", "--images", "app"])
-    image_name = images.stdout.strip().splitlines()[0] if images.stdout.strip() else None
+    images = _run(repo_root, ["images", "app", "--format", "json"])
+    if images.returncode != 0 or not images.stdout.strip():
+        return None
+    try:
+        payload = json.loads(images.stdout)
+    except json.JSONDecodeError:
+        return None
+
+    entries = payload if isinstance(payload, list) else [payload]
+    image_name = None
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        service = entry.get("Service")
+        if service not in (None, "app"):
+            continue
+        repository = entry.get("Repository")
+        if not repository or repository == "<none>":
+            continue
+        tag = entry.get("Tag")
+        image_name = f"{repository}:{tag}" if tag and tag != "<none>" else repository
+        break
+
     if images.returncode != 0 or not image_name:
         return None
     inspect = subprocess.run(

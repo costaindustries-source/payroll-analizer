@@ -124,7 +124,9 @@ def _dispatch_by_subcommand(responses):
 def test_app_image_created_at_parses_inspect_output(monkeypatch, tmp_path):
     fake_run = _dispatch_by_subcommand(
         {
-            "compose": _FakeCompleted(returncode=0, stdout="payroll-analizer-app\n"),
+            "compose": _FakeCompleted(
+                returncode=0, stdout='[{"Service":"app","Repository":"payroll-analizer-app","Tag":"latest"}]\n'
+            ),
             "inspect": _FakeCompleted(returncode=0, stdout="2026-07-14T15:20:19.123456+00:00\n"),
         }
     )
@@ -136,14 +138,14 @@ def test_app_image_created_at_parses_inspect_output(monkeypatch, tmp_path):
 def test_app_image_created_at_none_when_image_not_built(monkeypatch, tmp_path):
     fake_run = _dispatch_by_subcommand(
         {
-            "compose": _FakeCompleted(returncode=0, stdout=""),
+            "compose": _FakeCompleted(returncode=0, stdout="[]\n"),
         }
     )
     monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
     assert compose_mod.app_image_created_at(tmp_path) is None
 
 
-def test_app_image_created_at_none_when_config_fails(monkeypatch, tmp_path):
+def test_app_image_created_at_none_when_images_command_fails(monkeypatch, tmp_path):
     fake_run = _dispatch_by_subcommand(
         {
             "compose": _FakeCompleted(returncode=1, stdout=""),
@@ -156,7 +158,9 @@ def test_app_image_created_at_none_when_config_fails(monkeypatch, tmp_path):
 def test_app_image_created_at_none_when_inspect_fails(monkeypatch, tmp_path):
     fake_run = _dispatch_by_subcommand(
         {
-            "compose": _FakeCompleted(returncode=0, stdout="payroll-analizer-app\n"),
+            "compose": _FakeCompleted(
+                returncode=0, stdout='[{"Service":"app","Repository":"payroll-analizer-app","Tag":"latest"}]\n'
+            ),
             "inspect": _FakeCompleted(returncode=1, stdout=""),
         }
     )
@@ -167,12 +171,38 @@ def test_app_image_created_at_none_when_inspect_fails(monkeypatch, tmp_path):
 def test_app_image_created_at_none_when_timestamp_unparseable(monkeypatch, tmp_path):
     fake_run = _dispatch_by_subcommand(
         {
-            "compose": _FakeCompleted(returncode=0, stdout="payroll-analizer-app\n"),
+            "compose": _FakeCompleted(
+                returncode=0, stdout='[{"Service":"app","Repository":"payroll-analizer-app","Tag":"latest"}]\n'
+            ),
             "inspect": _FakeCompleted(returncode=0, stdout="not-a-timestamp\n"),
         }
     )
     monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
     assert compose_mod.app_image_created_at(tmp_path) is None
+
+
+def test_app_image_created_at_ignores_other_services_even_if_listed_first(monkeypatch, tmp_path):
+    seen_inspect = {}
+
+    def fake_run(args, **kwargs):  # noqa: ARG001
+        if args[1] == "compose":
+            return _FakeCompleted(
+                returncode=0,
+                stdout=(
+                    '[{"Service":"db","Repository":"postgres","Tag":"17.6-alpine"},'
+                    '{"Service":"app","Repository":"payroll-analizer-app","Tag":"latest"}]\n'
+                ),
+            )
+        if args[1] == "inspect":
+            seen_inspect["image_name"] = args[-1]
+            return _FakeCompleted(returncode=0, stdout="2026-07-16T13:12:00+00:00\n")
+        raise AssertionError(f"Unexpected command: {args}")
+
+    monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
+    result = compose_mod.app_image_created_at(tmp_path)
+
+    assert seen_inspect["image_name"] == "payroll-analizer-app:latest"
+    assert result == datetime(2026, 7, 16, 13, 12, 0, tzinfo=timezone.utc)
 
 
 def test_exec_in_db_binary_stdout_writes_file_and_uses_binary_mode(monkeypatch, tmp_path):
