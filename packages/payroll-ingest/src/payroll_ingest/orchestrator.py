@@ -24,7 +24,7 @@ from payroll_ingest.models import AuditEvent, PayrollDocument
 from payroll_ingest.ocr import run_ocr
 from payroll_ingest.pdf_classify import PdfKind, classify_pdf
 from payroll_ingest.repository import save_document
-from payroll_ingest.templates.zucchetti import PARSER_VERSION, is_zucchetti_document, map_document
+from payroll_ingest.templates import find_template
 from payroll_ingest.validation import validate
 
 logger = structlog.get_logger()
@@ -134,10 +134,13 @@ def process_document(settings: Settings, session_factory, run_id: str, pdf_path:
     try:
         raw = extract_document(work_path, ocr_used=ocr_used)
 
-        if is_zucchetti_document(raw):
-            dto = map_document(raw)
+        spec = find_template(raw)
+        if spec is not None:
+            dto = spec.map(raw)
+            parser_version = spec.parser_version
         else:
-            dto = _unrecognized_dto("Layout non riconosciuto come cedolino Zucchetti")
+            dto = _unrecognized_dto("Layout non riconosciuto da nessun template registrato")
+            parser_version = "0.0.0"
 
         dto.anomalies.extend(validate(dto))
         status = _determine_status(dto)
@@ -161,7 +164,7 @@ def process_document(settings: Settings, session_factory, run_id: str, pdf_path:
                     original_filename=pdf_path.name,
                     status=status.value,
                     template_name=dto.template_name,
-                    parser_version=PARSER_VERSION,
+                    parser_version=parser_version,
                     source_used_ocr=ocr_used,
                     dto=dto,
                     raw=raw,

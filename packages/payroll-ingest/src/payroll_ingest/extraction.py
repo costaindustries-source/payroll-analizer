@@ -19,6 +19,20 @@ ROW_CLUSTER_TOLERANCE = 3.0
 WORD_X_TOLERANCE = 1.5
 WORD_Y_TOLERANCE = 1.5
 
+# Alcuni PDF (font Win2PDF senza FontBBox/width, v. docs/PIANO_TECNICO_NEW_TEMPLATES.md
+# §3) hanno larghezza di avanzamento nulla: tutti i frammenti di una parola condividono
+# lo stesso x0 (± ~0.3pt), e l'ordinamento per posizione di extract_words() produce
+# anagrammi (anche sulle cifre degli importi). Verificato empiricamente sui 12 file
+# Win2PDF noti (2018-03 -> 2019-01): frazione di coppie a x0 uguale ~0.77-0.79, contro
+# 0.0 sui PDF puliti dello stesso layout e ~0.05 sui cedolini Zucchetti di riferimento.
+SCRAMBLE_X0_TOLERANCE = 0.5
+SCRAMBLE_FRACTION_THRESHOLD = 0.20
+# Soglia di salto x0 per separare due parole ricostruite (v. _reconstruct_words):
+# i frammenti della STESSA parola condividono l'x0 di inizio parola (delta < 1pt nei
+# campioni verificati), mentre il passaggio a una parola successiva comporta uno
+# scarto ben maggiore (prossima colonna/parola sulla pagina).
+WORD_X0_JUMP_TOLERANCE = 3.0
+
 
 @dataclass
 class Word:
@@ -46,6 +60,7 @@ class RawPage:
     full_text: str
     width: float
     height: float
+    recovered_from_scramble: bool = False
 
 
 @dataclass
@@ -82,21 +97,79 @@ def _cluster_rows(words: list[Word]) -> list[Row]:
     return rows
 
 
-def extract_page(page: pdfplumber.page.Page) -> RawPage:
-    # y_tolerance esplicito: col default (3pt) pdfplumber a volte fonde due righe
-    # dati distinte ~10pt apart in un'unica "linea" quando condividono le stesse
-    # colonne x, producendo parole di un solo carattere e testo illeggibile.
-    raw_words = page.extract_words(
-        x_tolerance=WORD_X_TOLERANCE, y_tolerance=WORD_Y_TOLERANCE, keep_blank_chars=False
+def _is_scrambled_page(chars: list[dict]) -> bool:
+    """Rileva il font Win2PDF a avanzamento zero (v. costanti SCRAMBLE_*):
+    frazione di coppie di caratteri consecutivi nello stream (``page.chars``,
+    gia' nell'ordine di disegno originale) che condividono lo stesso x0 pur
+    essendo caratteri distinti. Un font con metriche corrette non produce mai
+    questa coincidenza sistematica; un font a larghezza nulla la produce per
+    ogni carattere successivo al primo di ciascuna parola."""
+    if len(chars) < 2:
+        return False
+    same_x0_pairs = sum(
+        1
+        for a, b in zip(chars, chars[1:])
+        if a["text"] != b["text"] and abs(a["x0"] - b["x0"]) <= SCRAMBLE_X0_TOLERANCE
     )
-    words = [
-        Word(text=w["text"], x0=w["x0"], x1=w["x1"], top=w["top"], bottom=w["bottom"])
-        for w in raw_words
-        if w["x1"] > SIDEBAR_MAX_X1
-    ]
+    return (same_x0_pairs / (len(chars) - 1)) > SCRAMBLE_FRACTION_THRESHOLD
+
+
+def _reconstruct_words(chars: list[dict]) -> list[Word]:
+    """Ricostruisce le parole da ``page.chars`` per le pagine con font a
+    avanzamento zero, dove l'ordine di disegno (gia' corretto, a differenza
+    dell'ordinamento per posizione di extract_words()) e' l'unico segnale
+    affidabile: i caratteri di una stessa parola condividono l'x0 di inizio
+    parola (entro WORD_X0_JUMP_TOLERANCE), mentre una parola nuova comporta uno
+    scarto x0 maggiore o un cambio di riga. Il testo e' la concatenazione dei
+    caratteri nell'ordine di stream (nessuno spazio inserito: gli spazi reali
+    sono gia' caratteri a se stanti nello stream); l'x0 della parola e' il
+    minimo dei frammenti, cosi' come previsto per l'assegnazione a colonna."""
+    words: list[Word] = []
+    current: Word | None = None
+    for c in chars:
+        text, x0, x1, top, bottom = c["text"], c["x0"], c["x1"], c["top"], c["bottom"]
+        if (
+            current is None
+            or abs(top - current.top) > ROW_CLUSTER_TOLERANCE
+            or abs(x0 - current.x0) > WORD_X0_JUMP_TOLERANCE
+        ):
+            current = Word(text=text, x0=x0, x1=x1, top=top, bottom=bottom)
+            words.append(current)
+        else:
+            current.text += text
+            current.x0 = min(current.x0, x0)
+            current.x1 = max(current.x1, x1)
+            current.bottom = max(current.bottom, bottom)
+    return words
+
+
+def extract_page(page: pdfplumber.page.Page) -> RawPage:
+    recovered = _is_scrambled_page(page.chars)
+    if recovered:
+        chars = [c for c in page.chars if c["x1"] > SIDEBAR_MAX_X1]
+        words = _reconstruct_words(chars)
+    else:
+        # y_tolerance esplicito: col default (3pt) pdfplumber a volte fonde due righe
+        # dati distinte ~10pt apart in un'unica "linea" quando condividono le stesse
+        # colonne x, producendo parole di un solo carattere e testo illeggibile.
+        raw_words = page.extract_words(
+            x_tolerance=WORD_X_TOLERANCE, y_tolerance=WORD_Y_TOLERANCE, keep_blank_chars=False
+        )
+        words = [
+            Word(text=w["text"], x0=w["x0"], x1=w["x1"], top=w["top"], bottom=w["bottom"])
+            for w in raw_words
+            if w["x1"] > SIDEBAR_MAX_X1
+        ]
     rows = _cluster_rows(words)
     full_text = "\n".join(row.text for row in rows)
-    return RawPage(words=words, rows=rows, full_text=full_text, width=page.width, height=page.height)
+    return RawPage(
+        words=words,
+        rows=rows,
+        full_text=full_text,
+        width=page.width,
+        height=page.height,
+        recovered_from_scramble=recovered,
+    )
 
 
 def extract_document(path: Path, ocr_used: bool = False) -> RawExtractedDocument:

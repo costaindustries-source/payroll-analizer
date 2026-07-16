@@ -31,6 +31,18 @@ from payroll_ingest.normalize import (
     parse_date_ddmmyyyy,
     parse_italian_month_year,
 )
+from payroll_ingest.templates._common import (
+    COLUMN_MATCH_TOLERANCE as _TFR_COLUMN_MATCH_TOLERANCE,
+    PAREN_MARKERS as _PAREN_MARKERS,
+    UNIT_TOKENS,
+    amount_after_label as _amount_after_label,
+    codice_fiscale_checksum_valido as _codice_fiscale_checksum_valido,
+    first_amount as _first_amount,
+    iban_mod97_valid as _iban_mod97_valid,
+    looks_like_data as _looks_like_data,
+    match_column_values,
+)
+from payroll_ingest.templates._spec import TemplateSpec
 
 TEMPLATE_NAME = "zucchetti_standard"
 PARSER_VERSION = "1.0.0"
@@ -65,10 +77,6 @@ _TWO_DATES_ROW_RE = re.compile(r"^(\d{2}-\d{2}-\d{4})\s+(\d{2}-\d{2}-\d{4})$")
 
 _HEADER_MAX_TOP = 260.0
 
-UNIT_TOKENS = {"GG", "ORE", "%"}
-# "{" e' la resa vista dal glitch di font per la parentesi aperta di un importo
-# negativo su alcuni cedolini (v. issue GH #3, 07.pdf/08.pdf/202201.pdf).
-_PAREN_MARKERS = {"(", ")", "{", "}"}
 IMPORTO_BASE_MIN = 200.0
 RIFERIMENTO_MIN = 345.0
 TRATTENUTE_MIN = 445.0
@@ -136,20 +144,6 @@ def _column_of(x0: float) -> str:
     return "descrizione"
 
 
-def _looks_like_data(text: str) -> bool:
-    return text in UNIT_TOKENS or text in _PAREN_MARKERS or parse_amount(text) is not None
-
-
-def _first_amount(words: list[Word]) -> Decimal | None:
-    for w in words:
-        if w.text in _PAREN_MARKERS:
-            continue
-        value = parse_amount(w.text)
-        if value is not None:
-            return abs(value)
-    return None
-
-
 def _split_amount_zone(words: list[Word]) -> tuple[Decimal | None, Decimal | None]:
     """Un valore tra parentesi e' sempre una trattenuta, indipendentemente dalla
     colonna x in cui il tipografo Zucchetti lo visualizza (spesso coincide con la
@@ -171,112 +165,6 @@ def _split_amount_zone(words: list[Word]) -> tuple[Decimal | None, Decimal | Non
             return abs(value), None
         return None, value
     return None, None
-
-
-# Tabelle ufficiali del check-digit del codice fiscale italiano (16esimo
-# carattere, calcolato dai primi 15 con pesi diversi per posizione dispari/pari,
-# 1-indexed). A differenza dell'IBAN (dove la posizione del carattere corrotto e'
-# strutturalmente nota: il CIN e' sempre una lettera) qui non c'e' alcun modo
-# strutturale di sapere quale carattere sia stato eventualmente corrotto dal
-# glitch di font, quindi non tentiamo alcuna correzione automatica (rischioso
-# per un identificativo fiscale/legale, a differenza dell'IBAN o dei codici
-# causale): ci limitiamo a rilevare che il check-digit non torna, v.
-# _codice_fiscale_checksum_valido, issue GH #10.
-_CF_ODD_VALUES = {
-    "0": 1,
-    "1": 0,
-    "2": 5,
-    "3": 7,
-    "4": 9,
-    "5": 13,
-    "6": 15,
-    "7": 17,
-    "8": 19,
-    "9": 21,
-    "A": 1,
-    "B": 0,
-    "C": 5,
-    "D": 7,
-    "E": 9,
-    "F": 13,
-    "G": 15,
-    "H": 17,
-    "I": 19,
-    "J": 21,
-    "K": 2,
-    "L": 4,
-    "M": 18,
-    "N": 20,
-    "O": 11,
-    "P": 3,
-    "Q": 6,
-    "R": 8,
-    "S": 12,
-    "T": 14,
-    "U": 16,
-    "V": 10,
-    "W": 22,
-    "X": 25,
-    "Y": 24,
-    "Z": 23,
-}
-_CF_EVEN_VALUES = {
-    "0": 0,
-    "1": 1,
-    "2": 2,
-    "3": 3,
-    "4": 4,
-    "5": 5,
-    "6": 6,
-    "7": 7,
-    "8": 8,
-    "9": 9,
-    "A": 0,
-    "B": 1,
-    "C": 2,
-    "D": 3,
-    "E": 4,
-    "F": 5,
-    "G": 6,
-    "H": 7,
-    "I": 8,
-    "J": 9,
-    "K": 10,
-    "L": 11,
-    "M": 12,
-    "N": 13,
-    "O": 14,
-    "P": 15,
-    "Q": 16,
-    "R": 17,
-    "S": 18,
-    "T": 19,
-    "U": 20,
-    "V": 21,
-    "W": 22,
-    "X": 23,
-    "Y": 24,
-    "Z": 25,
-}
-_CF_REMAINDER_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-
-def _codice_fiscale_checksum_valido(cf: str) -> bool:
-    """Verifica il check-digit ufficiale del codice fiscale italiano. Il
-    formato (_EMPLOYEE_ROW_RE) vincola gia' quali posizioni sono lettere e
-    quali cifre, ma non protegge da una lettera scambiata con un'altra lettera
-    plausibile per lo stesso glitch di font che colpisce altri campi dello
-    stesso documento (v. issue GH #4): il check-digit e' l'unico segnale
-    indipendente disponibile."""
-    if len(cf) != 16:
-        return False
-    try:
-        total = sum(
-            _CF_ODD_VALUES[ch] if (idx + 1) % 2 == 1 else _CF_EVEN_VALUES[ch] for idx, ch in enumerate(cf[:15])
-        )
-    except KeyError:
-        return False
-    return _CF_REMAINDER_LETTERS[total % 26] == cf[15]
 
 
 def _parse_header(rows: list[Row]) -> tuple[CompanyDTO, EmployeeDTO, str | None, str | None]:
@@ -599,7 +487,6 @@ _TFR_COLUMN_MARKERS = [
     ("quota", "quota_anno"),
     ("anticipi", "anticipi"),
 ]
-_TFR_COLUMN_MATCH_TOLERANCE = 60.0
 
 
 def _extract_tfr(rows: list[Row]) -> TfrDTO:
@@ -632,13 +519,10 @@ def _extract_tfr(rows: list[Row]) -> TfrDTO:
             ]
             if not marker_positions:
                 break
-            for value_word in rows[i + 1].words:
-                amount = parse_amount(value_word.text)
-                if amount is None:
-                    continue
-                nearest_x0, field = min(marker_positions, key=lambda m: abs(m[0] - value_word.x0))
-                if abs(nearest_x0 - value_word.x0) <= _TFR_COLUMN_MATCH_TOLERANCE:
-                    setattr(tfr, field, amount)
+            for field, amount in match_column_values(
+                marker_positions, rows[i + 1].words, _TFR_COLUMN_MATCH_TOLERANCE
+            ).items():
+                setattr(tfr, field, amount)
             break
     return tfr
 
@@ -702,15 +586,6 @@ def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
 _IBAN_CONFUSABLE_CIN = {"0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B"}
 
 
-def _iban_mod97_valid(iban: str) -> bool:
-    rearranged = iban[4:] + iban[:4]
-    try:
-        digits = "".join(str(int(ch, 36)) for ch in rearranged)
-    except ValueError:
-        return False
-    return int(digits) % 97 == 1
-
-
 def _recover_iban(raw: str) -> tuple[str, bool]:
     """Ritorna (iban, corretto_automaticamente). Vedi nota sopra _IBAN_CONFUSABLE_CIN."""
     if len(raw) != 27 or not raw.startswith("IT") or not raw[4].isdigit():
@@ -722,36 +597,6 @@ def _recover_iban(raw: str) -> tuple[str, bool]:
     if _iban_mod97_valid(candidate):
         return candidate, True
     return raw, False
-
-
-def _amount_after_label(words: list[Word], label_norm: str) -> Decimal | None:
-    """Cerca il primo importo che segue (per posizione nella riga, non solo nel
-    testo) la parola che completa l'etichetta cercata, invece del primo importo
-    dell'intera riga. Necessario perche' due blocchi logicamente distinti
-    possono finire sulla stessa riga clusterizzata quando la precisione delle
-    coordinate lo consente (osservato sui documenti con fallback OCR
-    07.pdf/08.pdf, dove l'imprecisione delle coordinate OCR fonde la riga
-    'Ferie ...' con quella di 'TOTALE TRATTENUTE' immediatamente successiva,
-    v. issue GH #12): prendere il primo importo della riga a prescindere dalla
-    posizione restituiva in quel caso il dato di 'Ferie' (piu' a sinistra)
-    invece del vero totale. ``words`` e' gia' ordinato per x0 (v. _cluster_rows),
-    quindi una volta individuata la parola che completa l'etichetta, gli
-    importi che contano sono solo quelli successivi nella lista."""
-    acc = ""
-    for idx, w in enumerate(words):
-        acc = normalize_label(acc + w.text)
-        if label_norm in acc:
-            for later in words[idx + 1 :]:
-                if later.text in _PAREN_MARKERS:
-                    continue
-                value = parse_amount(later.text)
-                if value is not None:
-                    return abs(value)
-            return None
-    # L'etichetta non e' stata trovata scandendo parola per parola (non
-    # dovrebbe succedere, dato che il chiamante ha gia' verificato un match su
-    # tutta la riga): fallback prudenziale sul comportamento precedente.
-    return _first_amount(words)
 
 
 _PROGRESSIVI_LABEL_NORM = normalize_label("PROGRESSIVI")
@@ -786,14 +631,7 @@ def _extract_progressivi(rows: list[Row]) -> tuple[Decimal | None, Decimal | Non
             # piu' avanti (su un'altra pagina) con i dati veri - continua la
             # ricerca invece di arrenderti al primo match testuale.
             continue
-        values: dict[str, Decimal] = {}
-        for value_word in rows[i + 1].words:
-            amount = parse_amount(value_word.text)
-            if amount is None:
-                continue
-            nearest_x0, field = min(marker_positions, key=lambda m: abs(m[0] - value_word.x0))
-            if abs(nearest_x0 - value_word.x0) <= _TFR_COLUMN_MATCH_TOLERANCE:
-                values[field] = amount
+        values = match_column_values(marker_positions, rows[i + 1].words, _TFR_COLUMN_MATCH_TOLERANCE)
         return values.get("imponibile_inps"), values.get("imponibile_inail"), values.get("imponibile_irpef")
     return None, None, None
 
@@ -1057,3 +895,6 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
         )
 
     return dto
+
+
+SPEC = TemplateSpec(name=TEMPLATE_NAME, parser_version=PARSER_VERSION, detect=is_zucchetti_document, map=map_document)

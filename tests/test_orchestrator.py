@@ -2,8 +2,9 @@
 
 Non esistono PDF reali di cedolini nel repo (dati personali, gitignored):
 mockiamo le funzioni di estrazione/classificazione/mappatura importate da
-orchestrator (classify_pdf, extract_document, is_zucchetti_document,
-map_document) e usiamo file con bytes qualunque solo per sha256_file. Ogni
+orchestrator (classify_pdf, extract_document, find_template - v.
+_mock_zucchetti_dispatch) e usiamo file con bytes qualunque solo per
+sha256_file. Ogni
 test usa `Settings(PAYROLL_BASE_DIR=tmp_path)`, mai le cartelle reali del repo.
 NOTA: il campo si chiama `base_dir` ma ha alias Pydantic "PAYROLL_BASE_DIR" e
 populate_by_name non e' abilitato in config.py: passare `base_dir=` al
@@ -38,11 +39,20 @@ from payroll_ingest.extraction import RawExtractedDocument, RawPage
 from payroll_ingest.hashing import sha256_file
 from payroll_ingest.models import AuditEvent, PayrollDocument
 from payroll_ingest.pdf_classify import PdfKind
+from payroll_ingest.templates._spec import TemplateSpec
 
 
 def _fake_raw(path, rows=None) -> RawExtractedDocument:
     page = RawPage(words=[], rows=rows or [], full_text="", width=595.0, height=842.0)
     return RawExtractedDocument(source_path=path, pages=[page], ocr_used=False)
+
+
+def _mock_zucchetti_dispatch(monkeypatch, map_fn, parser_version="1.0.0") -> None:
+    """Sostituisce orchestrator.find_template con uno stub che finge un match
+    Zucchetti e delega il mapping a map_fn, cosi' i test non dipendono
+    dall'implementazione reale di is_zucchetti_document/map_document."""
+    spec = TemplateSpec(name="zucchetti_standard", parser_version=parser_version, detect=lambda raw: True, map=map_fn)
+    monkeypatch.setattr(orchestrator, "find_template", lambda raw: spec)
 
 
 def _unique_bytes(tag: str) -> bytes:
@@ -111,8 +121,7 @@ def test_process_document_happy_path_processed(tmp_path, db_session_factory, mon
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", lambda path, ocr_used=False: _fake_raw(path))
-    monkeypatch.setattr(orchestrator, "is_zucchetti_document", lambda raw: True)
-    monkeypatch.setattr(orchestrator, "map_document", lambda raw: dto)
+    _mock_zucchetti_dispatch(monkeypatch, lambda raw: dto)
 
     run_id = str(uuid.uuid4())
     status = orchestrator.process_document(settings, db_session_factory, run_id, pdf_path)
@@ -148,8 +157,7 @@ def test_process_document_move_failure_writes_no_db_row(tmp_path, db_session_fac
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", lambda path, ocr_used=False: _fake_raw(path))
-    monkeypatch.setattr(orchestrator, "is_zucchetti_document", lambda raw: True)
-    monkeypatch.setattr(orchestrator, "map_document", lambda raw: _clean_dto())
+    _mock_zucchetti_dispatch(monkeypatch, lambda raw: _clean_dto())
 
     def failing_move(_src, _dst):
         raise OSError("simulated move failure")
@@ -185,8 +193,7 @@ def test_process_document_commit_failure_after_move_restores_original_file(tmp_p
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", lambda path, ocr_used=False: _fake_raw(path))
-    monkeypatch.setattr(orchestrator, "is_zucchetti_document", lambda raw: True)
-    monkeypatch.setattr(orchestrator, "map_document", lambda raw: dto)
+    _mock_zucchetti_dispatch(monkeypatch, lambda raw: dto)
 
     call_count = {"n": 0}
 
@@ -234,8 +241,8 @@ def test_process_document_same_filename_different_hash_no_overwrite(tmp_path, db
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", lambda path, ocr_used=False: _fake_raw(path))
-    # is_zucchetti_document/map_document NON mockati: un raw senza righe
-    # produce sempre l'esito "non riconosciuto" reale (_unrecognized_dto).
+    # find_template NON mockato: un raw senza righe non matcha alcun template
+    # registrato e produce sempre l'esito "non riconosciuto" reale (_unrecognized_dto).
 
     src_a = tmp_path / "srcA"
     src_b = tmp_path / "srcB"
@@ -338,8 +345,7 @@ def test_process_document_reprocesses_previous_needs_review(tmp_path, db_session
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", lambda path, ocr_used=False: _fake_raw(path))
-    monkeypatch.setattr(orchestrator, "is_zucchetti_document", lambda raw: True)
-    monkeypatch.setattr(orchestrator, "map_document", lambda raw: _clean_dto())
+    _mock_zucchetti_dispatch(monkeypatch, lambda raw: _clean_dto())
 
     run_id = str(uuid.uuid4())
     status = orchestrator.process_document(settings, db_session_factory, run_id, pdf_path)
@@ -429,8 +435,7 @@ def test_run_batch_processes_all_files_and_isolates_failures(tmp_path, db_sessio
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", fake_extract)
-    monkeypatch.setattr(orchestrator, "is_zucchetti_document", lambda raw: True)
-    monkeypatch.setattr(orchestrator, "map_document", lambda raw: _clean_dto())
+    _mock_zucchetti_dispatch(monkeypatch, lambda raw: _clean_dto())
 
     run_id = str(uuid.uuid4())
     summary = orchestrator.run_batch(settings, db_session_factory, run_id)
@@ -503,8 +508,7 @@ def test_run_batch_counts_every_status_kind(tmp_path, db_session_factory, monkey
 
     monkeypatch.setattr(orchestrator, "classify_pdf", lambda path, min_chars: PdfKind.TEXTUAL)
     monkeypatch.setattr(orchestrator, "extract_document", lambda path, ocr_used=False: _fake_raw(path))
-    monkeypatch.setattr(orchestrator, "is_zucchetti_document", lambda raw: True)
-    monkeypatch.setattr(orchestrator, "map_document", lambda raw, _p=None: dto_by_name.get(raw.source_path.name))
+    _mock_zucchetti_dispatch(monkeypatch, lambda raw: dto_by_name.get(raw.source_path.name))
 
     run_id = str(uuid.uuid4())
     summary = orchestrator.run_batch(settings, db_session_factory, run_id)
