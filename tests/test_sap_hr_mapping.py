@@ -250,6 +250,25 @@ def test_parse_pay_line_row_senza_descrizione():
     assert s._parse_pay_line_row(row, s._SECTION2_ZONES) is None
 
 
+def test_parse_pay_line_row_descrizione_con_token_unita_non_troncata():
+    row = Row(
+        top=310.0,
+        words=[w("0282", 21), w("ORE", 58), w("STRAORD.60%", 95), w("MESE", 165), w("PRECEDENTE", 198), w("8,00", 248)],
+    )
+    line = s._parse_pay_line_row(row, s._SECTION1_ZONES)
+    assert line is not None
+    assert line.descrizione == "ORE STRAORD.60% MESE PRECEDENTE"
+    assert line.quantita == Decimal("8.00")
+
+
+def test_parse_pay_line_row_descrizione_banca_ore_senza_troncamento():
+    row = Row(top=310.0, words=[w("0299", 21), w("BANCA", 58), w("ORE", 110), w("GODUTE", 145), w("1,00", 248)])
+    line = s._parse_pay_line_row(row, s._SECTION1_ZONES)
+    assert line is not None
+    assert line.descrizione == "BANCA ORE GODUTE"
+    assert line.quantita == Decimal("1.00")
+
+
 def test_parse_pay_line_row_ignora_marker_parentesi_e_token_non_numerico():
     row = Row(
         top=1.0,
