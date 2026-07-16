@@ -106,6 +106,15 @@ docker compose run --rm app payroll-ingest process   # elabora tutto input/
 docker compose run --rm app payroll-ingest export    # export completo -> export/<timestamp>_<schema>/
 ```
 
+`docker compose run` riusa silenziosamente l'immagine `app` gia' buildata anche
+se il codice in `packages/` e' cambiato da allora, senza nessun avviso (GH
+#26): dopo aver modificato `packages/payroll-ingest` o `packages/payroll-cli`,
+rifai sempre la build prima di processare —
+`docker compose build app && docker compose run --rm app payroll-ingest process`
+— oppure usa direttamente `docker compose run --build --rm app ...`.
+`uv run payroll status` segnala un avviso quando rileva codice piu' recente
+dell'ultima build.
+
 `process`: hash SHA-256 (skip dei duplicati già caricati) -> classificazione
 testuale/scansionato (OCR solo se serve) -> riconoscimento template + mapping
 -> salvataggio in una transazione per documento -> spostamento in

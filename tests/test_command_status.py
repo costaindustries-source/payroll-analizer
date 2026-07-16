@@ -4,6 +4,7 @@ semver sono mockati; per lo spazio disco si usa il filesystem reale (tmp_path)."
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from payroll_cli.commands import status as status_cmd
@@ -16,9 +17,11 @@ def _ctx(tmp_path, machine=None):
 
 def _quiet_defaults(monkeypatch):
     """Valori neutri per non far esplodere run() quando un test si concentra
-    su un'altra sezione: db non in esecuzione, nessun tag/aggiornamento."""
+    su un'altra sezione: db non in esecuzione, nessun tag/aggiornamento,
+    immagine 'app' non ancora buildata (niente avviso di staleness)."""
     monkeypatch.setattr(status_cmd, "ps_status", lambda repo_root, service: None)
     monkeypatch.setattr(status_cmd, "db_is_running", lambda repo_root: False)
+    monkeypatch.setattr(status_cmd, "app_image_created_at", lambda repo_root: None)
     monkeypatch.setattr(status_cmd.git_ops, "exact_tag_on_head", lambda repo_root: None)
     monkeypatch.setattr(status_cmd.git_ops, "nearest_tag", lambda repo_root: None)
     monkeypatch.setattr(status_cmd.git_ops, "list_local_tags", lambda repo_root: [])
@@ -52,6 +55,50 @@ def test_container_running_status_shown(monkeypatch, tmp_path, capsys):
     status_cmd.run(_ctx(tmp_path))
     out = capsys.readouterr().out
     assert "Container db:  Up 3 hours (healthy)" in out
+
+
+def test_stale_image_warning_shown_when_source_newer_than_build(monkeypatch, tmp_path, capsys):
+    _quiet_defaults(monkeypatch)
+    source_dir = tmp_path / "packages" / "payroll-ingest" / "src"
+    source_dir.mkdir(parents=True)
+    (source_dir / "mod.py").write_bytes(b"x")
+    image_created = datetime.now(timezone.utc) - timedelta(hours=1)
+    monkeypatch.setattr(status_cmd, "app_image_created_at", lambda repo_root: image_created)
+    status_cmd.run(_ctx(tmp_path))
+    out = capsys.readouterr().out
+    assert "Attenzione: codice in packages/ modificato dopo l'ultima build" in out
+
+
+def test_stale_image_warning_absent_when_build_newer_than_source(monkeypatch, tmp_path, capsys):
+    _quiet_defaults(monkeypatch)
+    source_dir = tmp_path / "packages" / "payroll-ingest" / "src"
+    source_dir.mkdir(parents=True)
+    (source_dir / "mod.py").write_bytes(b"x")
+    image_created = datetime.now(timezone.utc) + timedelta(hours=1)
+    monkeypatch.setattr(status_cmd, "app_image_created_at", lambda repo_root: image_created)
+    status_cmd.run(_ctx(tmp_path))
+    out = capsys.readouterr().out
+    assert "Attenzione: codice in packages/" not in out
+
+
+def test_stale_image_warning_absent_when_image_not_built_yet(monkeypatch, tmp_path, capsys):
+    _quiet_defaults(monkeypatch)  # app_image_created_at -> None di default
+    source_dir = tmp_path / "packages" / "payroll-ingest" / "src"
+    source_dir.mkdir(parents=True)
+    (source_dir / "mod.py").write_bytes(b"x")
+    status_cmd.run(_ctx(tmp_path))
+    out = capsys.readouterr().out
+    assert "Attenzione: codice in packages/" not in out
+
+
+def test_stale_image_warning_absent_when_no_source_dirs(monkeypatch, tmp_path, capsys):
+    _quiet_defaults(monkeypatch)
+    monkeypatch.setattr(
+        status_cmd, "app_image_created_at", lambda repo_root: datetime.now(timezone.utc) - timedelta(hours=1)
+    )
+    status_cmd.run(_ctx(tmp_path))
+    out = capsys.readouterr().out
+    assert "Attenzione: codice in packages/" not in out
 
 
 def test_documents_unknown_when_db_not_running(monkeypatch, tmp_path, capsys):

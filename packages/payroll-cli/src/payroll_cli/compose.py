@@ -5,6 +5,7 @@ dalla directory da cui e' stato invocato `payroll`)."""
 from __future__ import annotations
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 
@@ -56,6 +57,29 @@ def up_db(repo_root: Path) -> subprocess.CompletedProcess:
 
 def build_app(repo_root: Path) -> subprocess.CompletedProcess:
     return _run(repo_root, ["build", "app"])
+
+
+def app_image_created_at(repo_root: Path) -> datetime | None:
+    """Timestamp di creazione dell'immagine 'app' gia' buildata (None se non
+    esiste ancora, o se docker/l'immagine non sono raggiungibili): usato per
+    avvisare quando il codice in packages/ e' piu' recente della build (GH #26,
+    'docker compose run' riusa l'immagine stale senza avviso)."""
+    images = _run(repo_root, ["config", "--images", "app"])
+    image_name = images.stdout.strip().splitlines()[0] if images.stdout.strip() else None
+    if images.returncode != 0 or not image_name:
+        return None
+    inspect = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Created}}", image_name],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+    )
+    if inspect.returncode != 0:
+        return None
+    try:
+        return datetime.fromisoformat(inspect.stdout.strip())
+    except ValueError:
+        return None
 
 
 def exec_in_db_binary_stdout(repo_root: Path, args: list[str], dest: Path) -> subprocess.CompletedProcess:

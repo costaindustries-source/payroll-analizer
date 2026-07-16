@@ -6,6 +6,7 @@ costruiti e il parsing dell'output.
 """
 
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import payroll_cli.compose as compose_mod
@@ -106,6 +107,72 @@ def test_cp_to_db_builds_expected_args(monkeypatch, tmp_path):
     compose_mod.cp_to_db(tmp_path, tmp_path / "dump.sql", "/tmp/dump.sql")
     (args, _kwargs) = calls[0]
     assert args[0] == ["docker", "compose", "cp", str(tmp_path / "dump.sql"), "db:/tmp/dump.sql"]
+
+
+def _dispatch_by_subcommand(responses):
+    """fake_run che sceglie la risposta in base al secondo argomento del comando
+    docker (['docker', 'compose', 'config', ...] vs ['docker', 'inspect', ...]),
+    per testare app_image_created_at che incatena due chiamate subprocess."""
+
+    def fake_run(args, **kwargs):
+        key = args[1]
+        return responses[key]
+
+    return fake_run
+
+
+def test_app_image_created_at_parses_inspect_output(monkeypatch, tmp_path):
+    fake_run = _dispatch_by_subcommand(
+        {
+            "compose": _FakeCompleted(returncode=0, stdout="payroll-analizer-app\n"),
+            "inspect": _FakeCompleted(returncode=0, stdout="2026-07-14T15:20:19.123456+00:00\n"),
+        }
+    )
+    monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
+    result = compose_mod.app_image_created_at(tmp_path)
+    assert result == datetime(2026, 7, 14, 15, 20, 19, 123456, tzinfo=timezone.utc)
+
+
+def test_app_image_created_at_none_when_image_not_built(monkeypatch, tmp_path):
+    fake_run = _dispatch_by_subcommand(
+        {
+            "compose": _FakeCompleted(returncode=0, stdout=""),
+        }
+    )
+    monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
+    assert compose_mod.app_image_created_at(tmp_path) is None
+
+
+def test_app_image_created_at_none_when_config_fails(monkeypatch, tmp_path):
+    fake_run = _dispatch_by_subcommand(
+        {
+            "compose": _FakeCompleted(returncode=1, stdout=""),
+        }
+    )
+    monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
+    assert compose_mod.app_image_created_at(tmp_path) is None
+
+
+def test_app_image_created_at_none_when_inspect_fails(monkeypatch, tmp_path):
+    fake_run = _dispatch_by_subcommand(
+        {
+            "compose": _FakeCompleted(returncode=0, stdout="payroll-analizer-app\n"),
+            "inspect": _FakeCompleted(returncode=1, stdout=""),
+        }
+    )
+    monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
+    assert compose_mod.app_image_created_at(tmp_path) is None
+
+
+def test_app_image_created_at_none_when_timestamp_unparseable(monkeypatch, tmp_path):
+    fake_run = _dispatch_by_subcommand(
+        {
+            "compose": _FakeCompleted(returncode=0, stdout="payroll-analizer-app\n"),
+            "inspect": _FakeCompleted(returncode=0, stdout="not-a-timestamp\n"),
+        }
+    )
+    monkeypatch.setattr(compose_mod.subprocess, "run", fake_run)
+    assert compose_mod.app_image_created_at(tmp_path) is None
 
 
 def test_exec_in_db_binary_stdout_writes_file_and_uses_binary_mode(monkeypatch, tmp_path):

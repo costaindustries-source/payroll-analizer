@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 
 from payroll_cli import git_ops, semver
-from payroll_cli.compose import db_env, db_is_running, exec_in_db, ps_status
+from payroll_cli.compose import app_image_created_at, db_env, db_is_running, exec_in_db, ps_status
 from payroll_cli.context import Context
 
 _ZONE_IDENTIFIER_SUFFIX = ":Zone.Identifier"
+# packages/ e' l'unico codice che finisce nell'immagine 'app' (v. Dockerfile):
+# altre directory (tests/, docs/, scripts/) non ne fanno parte, quindi un loro
+# mtime piu' recente della build non e' un segnale di immagine stale.
+_APP_SOURCE_DIRS = ("packages/payroll-ingest/src", "packages/payroll-cli/src")
 
 
 def run(ctx: Context) -> None:
@@ -17,6 +22,7 @@ def run(ctx: Context) -> None:
 
     _print_machine(ctx)
     _print_containers(repo_root)
+    _print_stale_image_warning(repo_root)
     _print_db_and_documents(repo_root)
     _print_input_backlog(repo_root)
     _print_disk_usage(repo_root)
@@ -33,6 +39,32 @@ def _print_machine(ctx: Context) -> None:
 def _print_containers(repo_root: Path) -> None:
     db_status = ps_status(repo_root, "db") or "non in esecuzione"
     typer.echo(f"Container db:  {db_status}")
+
+
+def _newest_source_mtime(repo_root: Path) -> datetime | None:
+    newest: float | None = None
+    for rel_dir in _APP_SOURCE_DIRS:
+        source_dir = repo_root / rel_dir
+        if not source_dir.is_dir():
+            continue
+        for path in source_dir.rglob("*.py"):
+            mtime = path.stat().st_mtime
+            if newest is None or mtime > newest:
+                newest = mtime
+    return datetime.fromtimestamp(newest, tz=timezone.utc) if newest is not None else None
+
+
+def _print_stale_image_warning(repo_root: Path) -> None:
+    image_created = app_image_created_at(repo_root)
+    if image_created is None:
+        return  # immagine non ancora buildata (o docker non raggiungibile): niente da segnalare
+    newest_source = _newest_source_mtime(repo_root)
+    if newest_source is not None and newest_source > image_created:
+        typer.echo(
+            f"Attenzione: codice in packages/ modificato dopo l'ultima build dell'immagine 'app' "
+            f"({image_created:%Y-%m-%d %H:%M} UTC) — esegui 'docker compose build app' prima di "
+            "'docker compose run --rm app ...', altrimenti userai codice vecchio senza saperlo."
+        )
 
 
 def _print_db_and_documents(repo_root: Path) -> None:
