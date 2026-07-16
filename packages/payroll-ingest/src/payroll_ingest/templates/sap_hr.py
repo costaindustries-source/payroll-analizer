@@ -38,7 +38,6 @@ from payroll_ingest.templates._common import (
     codice_fiscale_checksum_valido,
     first_amount,
     iban_mod97_valid,
-    looks_like_data,
     match_column_values,
     rows_with_numeric_value,
 )
@@ -245,7 +244,7 @@ def _parse_pay_line_row(row: Row, zones: list[tuple[float, str]]) -> PayLineDTO 
 
     data_start = len(words)
     for i in range(1, len(words)):
-        if looks_like_data(words[i].text):
+        if words[i].x0 >= ORE_GIORNI_MIN:
             data_start = i
             break
     desc_words = words[1:data_start]
