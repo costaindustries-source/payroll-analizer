@@ -207,6 +207,22 @@ Lo smoke test gira sui 6 cedolini reali di riferimento in `docs/payroll-test/`
 docker compose run --rm app python scripts/smoke_test.py --samples-dir /data/docs/payroll-test   # dentro il container
 ```
 
+Per i template Copernico/SAP HR, `scripts/verify_new_templates.py` (chiama
+`extract_document`+`find_template`+`spec.map` direttamente) e
+`scripts/verify_new_templates_real_batch.py` (esegue il path reale
+`classify_pdf`->...->`save_document`->spostamento file tramite `run_batch`,
+su uno schema Postgres isolato usa-e-getta e una copia scratch dei campioni)
+vanno lanciati **entrambi** dopo ogni modifica a
+`extraction.py`/`templates/*.py`/`orchestrator.py`/`ocr.py`: il primo e' piu'
+rapido (nessun DB/OCR coinvolto) ma da solo puo' dare un falso "tutto OK" su
+differenze che si manifestano solo nel path reale (v. issue GH #25/#27):
+
+```bash
+uv run python scripts/verify_new_templates.py
+docker compose up -d db   # se non gia' in esecuzione
+uv run python scripts/verify_new_templates_real_batch.py
+```
+
 `tests/` contiene la stessa copertura di regressioni note (destination path,
 corruzione font) ma con fixture sintetiche, cosi' da poter girare anche in CI
 senza dati reali:
