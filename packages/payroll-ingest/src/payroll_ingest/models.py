@@ -170,6 +170,15 @@ class Tax(Base):
     addizionale_regionale_regione: Mapped[str | None] = mapped_column(String(64))
     addizionale_comunale: Mapped[Decimal | None] = mapped_column(NUMERIC)
     acconto_addizionale_comunale: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    imponibile_fiscale_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    imposta_lorda_annua: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    imposta_dovuta_annua: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    imposta_pagata_annua: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    imp_inps_progr_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    ctr_inps_progr_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    ctr_dip_inps_progr_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    cong_credito_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    cong_debito_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
 
     document: Mapped[PayrollDocument] = relationship(back_populates="tax")
 
@@ -187,6 +196,7 @@ class Tfr(Base):
     imponibile_rivalutazione: Mapped[Decimal | None] = mapped_column(NUMERIC)
     quota_anno: Mapped[Decimal | None] = mapped_column(NUMERIC)
     anticipi: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    retribuzione_utile_tfr_annua: Mapped[Decimal | None] = mapped_column(NUMERIC)
 
     document: Mapped[PayrollDocument] = relationship(back_populates="tfr")
 

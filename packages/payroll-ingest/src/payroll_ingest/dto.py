@@ -99,6 +99,18 @@ class TaxDTO:
     addizionale_regionale_regione: str | None = None
     addizionale_comunale: Decimal | None = None
     acconto_addizionale_comunale: Decimal | None = None
+    # Riepilogo annuale (solo cedolini tipo=mensilita_aggiuntiva, v. issue #31):
+    # dati fiscali/contributivi cumulati dell'anno, distinti dai valori del
+    # mese sopra - nessun campo esistente aveva posto per un valore "annuo".
+    imponibile_fiscale_annuo: Decimal | None = None
+    imposta_lorda_annua: Decimal | None = None
+    imposta_dovuta_annua: Decimal | None = None
+    imposta_pagata_annua: Decimal | None = None
+    imp_inps_progr_annuo: Decimal | None = None
+    ctr_inps_progr_annuo: Decimal | None = None
+    ctr_dip_inps_progr_annuo: Decimal | None = None
+    cong_credito_annuo: Decimal | None = None
+    cong_debito_annuo: Decimal | None = None
     classification: DataClassification = DataClassification.OPZIONALE
 
 
@@ -110,6 +122,9 @@ class TfrDTO:
     imponibile_rivalutazione: Decimal | None = None
     quota_anno: Decimal | None = None
     anticipi: Decimal | None = None
+    # Cumulata dell'anno (solo tipo=mensilita_aggiuntiva, v. issue #31),
+    # distinta da retribuzione_utile_tfr che e' il valore del mese.
+    retribuzione_utile_tfr_annua: Decimal | None = None
     classification: DataClassification = DataClassification.OPZIONALE
 
 

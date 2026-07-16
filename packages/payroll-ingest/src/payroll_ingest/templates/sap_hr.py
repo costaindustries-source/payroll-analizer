@@ -499,6 +499,66 @@ def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
     return balances
 
 
+# --- Riepilogo annuale (solo tipo=mensilita_aggiuntiva) --------------------
+
+# Marker per individuare le due righe di riepilogo annuale (issue #31): dati
+# fiscali/contributivi cumulati dell'anno, presenti solo sui 2 cedolini di
+# tredicesima del corpus (201913.pdf, 202013.pdf), su un box a parte - riga
+# di etichette seguita immediatamente dalla riga di valori.
+_ANNUAL_TAX_ROW_NORM = normalize_label("Imponibile Fiscale Annuo")
+_ANNUAL_INPS_ROW_NORM = normalize_label("Imp. INPS Progr.")
+
+# Soglie x0 (punto medio tra le etichette adiacenti) calibrate su entrambi i
+# file di tredicesima noti - stesso layout fisico dei due box.
+_ANNUAL_TAX_ZONES: list[tuple[float, str]] = [
+    (478.0, "imposta_pagata_annua"),
+    (374.0, "imposta_dovuta_annua"),
+    (259.0, "imposta_lorda_annua"),
+    (121.0, "imponibile_fiscale_annuo"),
+    (0.0, "retribuzione_utile_tfr_annua"),
+]
+_ANNUAL_INPS_ZONES: list[tuple[float, str]] = [
+    (236.0, "cong_debito_annuo"),
+    (182.0, "cong_credito_annuo"),
+    (121.0, "ctr_dip_inps_progr_annuo"),
+    (57.0, "ctr_inps_progr_annuo"),
+    (0.0, "imp_inps_progr_annuo"),
+]
+_ANNUAL_TFR_FIELDS = {"retribuzione_utile_tfr_annua"}
+
+
+def _extract_annual_summary(rows: list[Row]) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+    """Ritorna (campi_tax, campi_tfr) del riepilogo annuale. I valori del box
+    "Imposta Dovuta"/"Cong. Credito"/"Cong. Debito" risultano assenti (non
+    stampati, non zero-riempiti) su entrambi i campioni noti - il matching
+    per posizione li lascia correttamente a None invece di disallinearli
+    sugli altri campi presenti."""
+    tax_values: dict[str, Decimal] = {}
+    tfr_values: dict[str, Decimal] = {}
+    for i, row in enumerate(rows):
+        norm = normalize_label(row.text)
+        if i + 1 >= len(rows):
+            continue
+        if _ANNUAL_TAX_ROW_NORM in norm:
+            zones = _ANNUAL_TAX_ZONES
+        elif _ANNUAL_INPS_ROW_NORM in norm:
+            zones = _ANNUAL_INPS_ZONES
+        else:
+            continue
+        for w in rows[i + 1].words:
+            amount = parse_amount(w.text)
+            if amount is None:
+                continue
+            field = _column_of(w.x0, zones)
+            if field is None:
+                continue
+            if field in _ANNUAL_TFR_FIELDS:
+                tfr_values[field] = amount
+            else:
+                tax_values[field] = amount
+    return tax_values, tfr_values
+
+
 # --- Totali / IBAN / NETTO -----------------------------------------------
 
 _TOTALE_TRATTENUTE_COMPETENZE_NORM = normalize_label("Totale Trattenute Totale Competenze")
@@ -580,6 +640,12 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
     tfr = _extract_tfr(all_rows)
     leave_balances = _extract_leave_balances(all_rows)
     totals = _extract_totals(all_rows, all_words)
+
+    annual_tax_values, annual_tfr_values = _extract_annual_summary(all_rows)
+    for field, amount in annual_tax_values.items():
+        setattr(tax, field, amount)
+    for field, amount in annual_tfr_values.items():
+        setattr(tfr, field, amount)
 
     period_type, mese, anno, label_originale = _parse_period(doc.first_page.rows)
     if mese == 0:

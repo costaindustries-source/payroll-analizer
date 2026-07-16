@@ -361,6 +361,92 @@ def test_extract_tax_senza_dati_resta_none():
 
 
 # ---------------------------------------------------------------------------
+# _extract_annual_summary (riepilogo annuale tredicesima, issue #31)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_annual_summary_tax_e_tfr():
+    rows = [
+        Row(
+            top=708.0,
+            words=[
+                w("Retr.", 29.2),
+                w("Utile", 46.3),
+                w("TFR", 62.2),
+                w("Imponibile", 214.7),
+                w("Fiscale", 248.5),
+                w("Annuo", 272.6),
+                w("Imposta", 304.3),
+                w("Lorda", 331.1),
+                w("Imposta", 443.9),
+                w("Dovuta", 470.7),
+                w("Imposta", 512.6),
+                w("Pagata", 539.4),
+            ],
+        ),
+        Row(
+            top=714.2,
+            words=[w("2.630,54", 48.9), w("33.342,23", 231.3), w("8.991,81", 322.0), w("8.391,14", 537.4)],
+        ),
+        Row(
+            top=727.4,
+            words=[
+                w("Imp.", 26.0),
+                w("INPS", 41.6),
+                w("Progr.", 59.9),
+                w("Ctr.", 88.9),
+                w("INPS", 102.1),
+                w("Progr.", 120.3),
+                w("Ctr.", 153.6),
+                w("Dip.", 166.8),
+                w("INPS", 181.2),
+                w("Cong.", 211.6),
+                w("Credito", 232.2),
+                w("Cong.", 261.6),
+                w("Debito", 282.2),
+            ],
+        ),
+        Row(top=734.8, words=[w("36.838,00", 42.9), w("3.495,91", 110.9), w("249,68", 178.9)]),
+    ]
+    tax_values, tfr_values = s._extract_annual_summary(rows)
+    assert tax_values == {
+        "imponibile_fiscale_annuo": Decimal("33342.23"),
+        "imposta_lorda_annua": Decimal("8991.81"),
+        "imposta_pagata_annua": Decimal("8391.14"),
+        "imp_inps_progr_annuo": Decimal("36838.00"),
+        "ctr_inps_progr_annuo": Decimal("3495.91"),
+        "ctr_dip_inps_progr_annuo": Decimal("249.68"),
+    }
+    assert tfr_values == {"retribuzione_utile_tfr_annua": Decimal("2630.54")}
+
+
+def test_extract_annual_summary_senza_dati_resta_vuoto():
+    tax_values, tfr_values = s._extract_annual_summary([trow(1.0, "riga qualunque")])
+    assert tax_values == {}
+    assert tfr_values == {}
+
+
+def test_extract_annual_summary_ignora_token_non_numerico_nella_riga_valori():
+    rows = [
+        Row(top=708.0, words=[w("Imponibile", 214.7), w("Fiscale", 248.5), w("Annuo", 272.6)]),
+        Row(top=714.2, words=[w("n/d", 231.3)]),
+    ]
+    tax_values, tfr_values = s._extract_annual_summary(rows)
+    assert tax_values == {}
+    assert tfr_values == {}
+
+
+def test_extract_annual_summary_etichetta_ultima_riga_non_crasha():
+    # v. issue #31: sui 2 campioni reali il documento finisce subito dopo
+    # l'etichetta ferie, senza righe dati - stesso rischio qui se l'etichetta
+    # annuale fosse l'ultima riga del documento (nessun IndexError).
+    rows = [Row(top=708.0, words=[w("Imponibile", 214.7), w("Fiscale", 248.5), w("Annuo", 272.6)])]
+    tax_values, tfr_values = s._extract_annual_summary(rows)
+    assert tax_values == {}
+    assert tfr_values == {}
+
+
+# ---------------------------------------------------------------------------
 # _extract_tfr
 # ---------------------------------------------------------------------------
 

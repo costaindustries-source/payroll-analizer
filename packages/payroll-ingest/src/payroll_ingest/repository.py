@@ -180,6 +180,15 @@ def save_document(
                 addizionale_regionale_regione=dto.tax.addizionale_regionale_regione,
                 addizionale_comunale=dto.tax.addizionale_comunale,
                 acconto_addizionale_comunale=dto.tax.acconto_addizionale_comunale,
+                imponibile_fiscale_annuo=dto.tax.imponibile_fiscale_annuo,
+                imposta_lorda_annua=dto.tax.imposta_lorda_annua,
+                imposta_dovuta_annua=dto.tax.imposta_dovuta_annua,
+                imposta_pagata_annua=dto.tax.imposta_pagata_annua,
+                imp_inps_progr_annuo=dto.tax.imp_inps_progr_annuo,
+                ctr_inps_progr_annuo=dto.tax.ctr_inps_progr_annuo,
+                ctr_dip_inps_progr_annuo=dto.tax.ctr_dip_inps_progr_annuo,
+                cong_credito_annuo=dto.tax.cong_credito_annuo,
+                cong_debito_annuo=dto.tax.cong_debito_annuo,
             )
         )
 
@@ -193,6 +202,7 @@ def save_document(
                 imponibile_rivalutazione=dto.tfr.imponibile_rivalutazione,
                 quota_anno=dto.tfr.quota_anno,
                 anticipi=dto.tfr.anticipi,
+                retribuzione_utile_tfr_annua=dto.tfr.retribuzione_utile_tfr_annua,
             )
         )
 
