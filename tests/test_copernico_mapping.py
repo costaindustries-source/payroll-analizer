@@ -584,6 +584,35 @@ def test_extract_tfr_senza_dati_resta_tutto_none():
 
 
 # ---------------------------------------------------------------------------
+# _extract_imponibile_fiscale_annuo (issue #45)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_imponibile_fiscale_annuo_trova_il_primo_valore():
+    rows = [
+        trow(700.0, "Imp.Fisc.Annuo Imposta Dovuta Imposta Pagata Detraz.Effettive"),
+        Row(top=708.0, words=[w("6.141,36", 52.8), w("0,00", 128.9), w("1.247,69", 186.5)]),
+    ]
+    assert c._extract_imponibile_fiscale_annuo(rows) == Decimal("6141.36")
+
+
+def test_extract_imponibile_fiscale_annuo_assente_resta_none():
+    assert c._extract_imponibile_fiscale_annuo([trow(1.0, "riga qualunque")]) is None
+
+
+def test_extract_imponibile_fiscale_annuo_continua_oltre_copia_vuota():
+    # Documento multipagina (es. 201811.pdf, issue #34): il box compare due
+    # volte, la prima copia (pagina di continuazione mancante) senza valori.
+    rows = [
+        trow(700.0, "Imp.Fisc.Annuo Imposta Dovuta"),
+        Row(top=708.0, words=[w(" ", 52.8), w(" ", 128.9)]),
+        trow(700.0, "Imp.Fisc.Annuo Imposta Dovuta"),
+        Row(top=708.0, words=[w("6.141,36", 52.8), w("0,00", 128.9)]),
+    ]
+    assert c._extract_imponibile_fiscale_annuo(rows) == Decimal("6141.36")
+
+
+# ---------------------------------------------------------------------------
 # _extract_leave_balances
 # ---------------------------------------------------------------------------
 
@@ -970,6 +999,13 @@ def test_map_document_imponibile_previdenziale_non_arrotondato():
     assert dto.tax.imponibile_previdenziale_non_arrotondato == Decimal("2324.37")
     assert dto.unrecognized_row_texts == []
     assert not any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
+
+
+def test_map_document_imponibile_fiscale_annuo():
+    rows = _happy_path_rows() + [trow(700.0, "Imp.Fisc.Annuo Imposta Dovuta"), trow(708.0, "6.141,36 0,00")]
+    doc = _doc(rows)
+    dto = c.map_document(doc)
+    assert dto.tax.imponibile_fiscale_annuo == Decimal("6141.36")
 
 
 def test_map_document_multipagina_concatena_pay_lines():

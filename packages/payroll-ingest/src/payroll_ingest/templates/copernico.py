@@ -522,6 +522,39 @@ def _extract_tfr(rows: list[Row]) -> TfrDTO:
     return tfr
 
 
+# Riepilogo annuale (issue GH #45): box a fondo pagina presente su OGNI
+# documento Copernico (non solo tredicesima, a differenza di SAP HR/#31) con
+# 8 colonne (Imp.Fisc.Annuo/Imposta Dovuta/Imposta Pagata/Detraz.Effettive/
+# Imposta a Debito/Imposta a Credito/Detraz. Art. 13/Detraz. Altre), MAI
+# estratto prima. Verificato pero' su tutti i 32 documenti reali del corpus
+# che la LARGHEZZA di rendering delle colonne intermedie non e' fissa (si
+# comprime/espande in base al contenuto - 3 documenti su 32 hanno "Imposta
+# Dovuta" valorizzata invece che 0,00 e TUTTE le colonne successive si
+# spostano di conseguenza): una mappatura per soglia x0 fissa (come usata
+# altrove in questo modulo) produrrebbe un mismatch silenzioso su quei casi.
+# Estratto quindi SOLO il primo campo (Imp.Fisc.Annuo): e' sempre il primo
+# valore della riga su tutti i 32 campioni, quindi non soggetto alla
+# variabilita' di posizione delle colonne successive - le altre 7 colonne
+# (di questo box e dell'intero secondo box "Imp. INPS Annuo") restano
+# deliberatamente non mappate, serve un approccio piu' robusto (es. marker
+# derivati dalla riga di intestazione invece di soglie fisse) prima di
+# estenderle.
+_ANNUAL_FISCALE_ROW_NORM = normalize_label("Imp.Fisc.Annuo")
+
+
+def _extract_imponibile_fiscale_annuo(rows: list[Row]) -> Decimal | None:
+    # Non ritorna al primo match: su documenti multipagina (es. 201811.pdf,
+    # issue #34) il box compare due volte, una copia vuota su una pagina e
+    # quella coi valori veri su un'altra - continua a cercare se l'importo
+    # non si trova, come gia' fatto per _extract_imponibile_previdenziale_non_arrotondato.
+    for i, row in enumerate(rows):
+        if _ANNUAL_FISCALE_ROW_NORM in normalize_label(row.text) and i + 1 < len(rows):
+            amount = first_amount(rows[i + 1].words)
+            if amount is not None:
+                return amount
+    return None
+
+
 _LEAVE_HEADER_SPETTANTI_NORM = normalize_label("Spettanti")
 _LEAVE_HEADER_GODUTE_NORM = normalize_label("Godute")
 _LEAVE_HEADER_RESIDUE_NORM = normalize_label("Residue")
@@ -660,6 +693,7 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
 
     tax = _extract_tax(all_rows)
     tax.imponibile_previdenziale_non_arrotondato = _extract_imponibile_previdenziale_non_arrotondato(all_rows)
+    tax.imponibile_fiscale_annuo = _extract_imponibile_fiscale_annuo(all_rows)
     tfr = _extract_tfr(all_rows)
     leave_balances = _extract_leave_balances(all_rows)
     totals = _extract_totals(all_rows)
