@@ -299,6 +299,25 @@ def test_extract_pay_lines_from_page_due_sezioni():
     assert unmapped == ["CTB. DED. CTB.NON DED."]
 
 
+def test_extract_pay_lines_from_page_chiude_su_footer_box_senza_addizionali():
+    # Issue #43: i cedolini di tredicesima (es. 201913.pdf/202013.pdf) non
+    # hanno una sezione ADDIZIONALI - la sezione voci deve comunque chiudersi
+    # sul marcatore del box footer, senza ingoiare TFR/riepilogo annuale/ferie
+    # come falsi candidati voce.
+    rows = [
+        trow(302.0, "VOCI RETRIBUTIVE ORE/GIORNI IMPORTO UNITARIO"),
+        Row(top=310.0, words=[w("AA245", 21), w("Retribuzione", 58), w("1.000,00", 536)]),
+        trow(400.0, "TRATTENUTE PREVIDENZIALI IMPONIBILI ALIQUOTE"),
+        Row(top=408.0, words=[w("005", 21), w("INPS", 58), w("50,00", 480)]),
+        trow(588.0, "Descrizione Imponibile Fiscale Imponibili Lordo Totale Trattenute Totale Competenze"),
+        trow(600.0, "IBAN"),
+        trow(650.0, "Maturate Godute Residue"),
+    ]
+    pay_lines, unmapped = s._extract_pay_lines_from_page(rows)
+    assert {line.codice for line in pay_lines} == {"AA245", "005"}
+    assert unmapped == []
+
+
 def test_extract_pay_lines_from_page_senza_header_restituisce_vuoto():
     pay_lines, unmapped = s._extract_pay_lines_from_page([trow(1.0, "riga qualunque")])
     assert pay_lines == []

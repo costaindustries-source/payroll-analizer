@@ -300,6 +300,16 @@ def _extract_pay_lines_from_page(rows: list[Row]) -> tuple[list[PayLineDTO], lis
             continue
         if _ADDIZIONALI_START_NORM in norm:
             break
+        if _FOOTER_BOX_START_NORM in norm:
+            # I cedolini di tredicesima (es. 201913.pdf/202013.pdf) non hanno
+            # una sezione ADDIZIONALI (niente addizionali regionale/comunale
+            # sulla mensilita' aggiuntiva - issue GH #43): senza questo
+            # secondo marcatore di chiusura, la sezione voci non si chiudeva
+            # mai e ingoiava l'intero box footer come falsi candidati voce.
+            # Nessuna regressione sui cedolini ordinari: ADDIZIONALI compare
+            # sempre prima di questo marcatore, quindi il break sopra scatta
+            # comunque per primo.
+            break
         zones = _SECTION1_ZONES if section == 1 else _SECTION2_ZONES
         parsed = _parse_pay_line_row(row, zones)
         if parsed is not None:
