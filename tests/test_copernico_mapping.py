@@ -653,6 +653,22 @@ def test_extract_leave_balances_senza_riga_ac_restituisce_vuoto():
     assert c._extract_leave_balances(rows) == []
 
 
+def test_extract_leave_balances_header_duplicato_usa_seconda_occorrenza():
+    # Issue #46: su documenti multipagina l'header compare due volte, la
+    # prima senza righe AC/AP/AP2 reali seguenti (pagina di continuazione
+    # mancante) - deve provare la seconda occorrenza invece di arrendersi.
+    rows = [
+        trow(1.0, "Spettanti Godute Residue Spettanti Godute Residue Spettanti Godute Residue"),
+        trow(2.0, "Imp.Fisc.Annuo Imposta Dovuta"),
+        trow(100.0, "Spettanti Godute Residue Spettanti Godute Residue Spettanti Godute Residue"),
+        Row(top=101.0, words=[w("AC", 20), w("40,20", 50), w("40,00", 110), w("0,20", 170)]),
+    ]
+    balances = c._extract_leave_balances(rows)
+    assert len(balances) == 1
+    assert balances[0].tipo == "ferie"
+    assert balances[0].maturato == Decimal("40.20")
+
+
 def test_extract_leave_balances_ignora_riga_vuota_e_tipo_assente():
     rows = [
         trow(1.0, "Spettanti Godute Residue Spettanti Godute Residue Spettanti Godute Residue"),

@@ -560,20 +560,7 @@ _LEAVE_HEADER_GODUTE_NORM = normalize_label("Godute")
 _LEAVE_HEADER_RESIDUE_NORM = normalize_label("Residue")
 
 
-def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
-    header_idx = None
-    for i, row in enumerate(rows):
-        norm = normalize_label(row.text)
-        if (
-            _LEAVE_HEADER_SPETTANTI_NORM in norm
-            and _LEAVE_HEADER_GODUTE_NORM in norm
-            and _LEAVE_HEADER_RESIDUE_NORM in norm
-        ):
-            header_idx = i
-            break
-    if header_idx is None:
-        return []
-
+def _find_leave_value_rows(rows: list[Row], header_idx: int) -> dict[str, Row]:
     value_rows: dict[str, Row] = {}
     for row in rows[header_idx + 1 : header_idx + 6]:
         if not row.words:
@@ -581,6 +568,26 @@ def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
         label = row.words[0].text.upper()
         if label in ("AC", "AP", "AP2") and label not in value_rows:
             value_rows[label] = row
+    return value_rows
+
+
+def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
+    # Su documenti multipagina (es. 201811.pdf, issue #34/#46) l'header
+    # "Spettanti/Godute/Residue" compare due volte (una copia vuota, senza
+    # righe AC/AP/AP2 seguenti, sulla pagina di continuazione mancante):
+    # prova OGNI occorrenza dell'header finche' non ne trova una seguita da
+    # almeno una riga AC/AP/AP2 reale, invece di fermarsi alla prima.
+    value_rows: dict[str, Row] = {}
+    for i, row in enumerate(rows):
+        norm = normalize_label(row.text)
+        if (
+            _LEAVE_HEADER_SPETTANTI_NORM in norm
+            and _LEAVE_HEADER_GODUTE_NORM in norm
+            and _LEAVE_HEADER_RESIDUE_NORM in norm
+        ):
+            value_rows = _find_leave_value_rows(rows, i)
+            if value_rows:
+                break
 
     ac_row = value_rows.get("AC")
     if ac_row is None:
