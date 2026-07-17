@@ -593,7 +593,12 @@ def _extract_totals(rows: list[Row], page_words: list[Word]) -> PayrollTotalsDTO
         if _TOTALE_TRATTENUTE_COMPETENZE_NORM in norm:
             for next_row in rows[i + 1 : i + 4]:
                 amounts = [w for w in next_row.words if parse_amount(w.text) is not None]
-                trattenute_vals = [w for w in amounts if w.x0 < COMPETENZE_MIN]
+                # Soglia inferiore su trattenute_vals (issue GH #42): senza,
+                # la riga "Emolumenti correnti" che precede il vero totale
+                # (Imponibile Fiscale/Imponibili Lordo, entrambi x0<520 ma
+                # NON trattenute) veniva scambiata per la riga dei totali e
+                # il break sotto scattava prima di raggiungere quella vera.
+                trattenute_vals = [w for w in amounts if TRATTENUTE_MIN <= w.x0 < COMPETENZE_MIN]
                 competenze_vals = [w for w in amounts if w.x0 >= COMPETENZE_MIN]
                 if trattenute_vals:
                     totals.totale_trattenute = parse_amount(trattenute_vals[0].text)

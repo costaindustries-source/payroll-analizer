@@ -643,6 +643,23 @@ def test_extract_totals_completo():
     assert totals.netto_mese == Decimal("1900.00")
 
 
+def test_extract_totals_ignora_riga_emolumenti_correnti_prima_del_vero_totale():
+    # Issue #42: la riga "Emolumenti correnti" (Imponibile Fiscale/Imponibili
+    # Lordo, entrambi x0<COMPETENZE_MIN ma NON trattenute) precede sempre il
+    # vero totale su ogni cedolino SAP HR - senza soglia inferiore su
+    # trattenute_vals, questa riga veniva scambiata per il totale e il loop
+    # si fermava prima di raggiungere quella vera (totale_competenze restava
+    # sempre None, totale_trattenute sempre sbagliato, su 25/25 file reali).
+    rows = [
+        trow(588.0, "Totale Trattenute Totale Competenze"),
+        Row(top=592.0, words=[w("2.610,56", 295, top=592.0), w("685,35", 402, top=592.0)]),
+        Row(top=617.0, words=[w("1.141,66", 468, top=617.0), w("2.884,25", 538, top=617.0)]),
+    ]
+    totals = s._extract_totals(rows, [word for row in rows for word in row.words])
+    assert totals.totale_trattenute == Decimal("1141.66")
+    assert totals.totale_competenze == Decimal("2884.25")
+
+
 def test_extract_totals_senza_dati_resta_none():
     rows = [trow(1.0, "riga qualunque")]
     totals = s._extract_totals(rows, [word for row in rows for word in row.words])
