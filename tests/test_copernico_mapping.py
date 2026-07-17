@@ -504,6 +504,23 @@ def test_extract_pay_lines_from_page_esclude_imponibile_previdenziale_con_import
     assert unmapped == []
 
 
+def test_extract_pay_lines_from_page_chiude_su_grand_totale_senza_sociali():
+    # Pagina di continuazione (es. 201811.pdf, unico Copernico a 2 pagine nel
+    # corpus - issue GH #34): niente "Totale Ritenute Sociali" proprio, la
+    # sezione voci deve comunque chiudersi sul marcatore di gran totale,
+    # senza ingoiare il footer (IBAN/TFR/riepilogo annuale) come unmapped.
+    rows = [
+        trow(255.0, "Cod. Descrizione Ore/GG % Dato Base Ritenute Competenze"),
+        Row(top=264.0, words=[w("0001", 20), w("RETRIBUZIONE", 55), w("1.500,00", 529)]),
+        trow(560.0, "Totale Ritenute Totale Competenze"),
+        trow(600.0, "IT 97 E 03111 11706 000000012863 NETTO A PAGARE"),
+        trow(650.0, "Ferie Rol/Ex-Festivita Banca Ore Riposi"),
+    ]
+    pay_lines, unmapped = c._extract_pay_lines_from_page(rows)
+    assert len(pay_lines) == 1
+    assert unmapped == []
+
+
 def test_extract_pay_lines_from_page_senza_header_restituisce_vuoto():
     pay_lines, unmapped = c._extract_pay_lines_from_page([trow(100.0, "riga qualunque")])
     assert pay_lines == []
@@ -695,6 +712,40 @@ def test_find_iban_in_row_manca_cab():
 def test_find_iban_in_row_manca_cc():
     row = Row(top=1.0, words=[w("97", 20), w("E", 60), w("03111", 90), w("11706", 120), w("nonccc", 150)])
     assert c._find_iban_in_row(row) is None
+
+
+def test_repair_split_amount_words_ricompone_decimale_troncato():
+    # "2.911,23" spezzato in "2.911,2" + "3" (issue #34/#35, glitch di
+    # posizione x0 su un carattere finale ricostruito da un font scramblato).
+    words = [w("1.229,03", 440), w("2.911,2", 476), w("3", 541)]
+    repaired = c._repair_split_amount_words(words)
+    assert [rw.text for rw in repaired] == ["1.229,03", "2.911,23"]
+
+
+def test_repair_split_amount_words_non_tocca_importi_ben_formati():
+    words = [w("100,00", 440), w("2.000,00", 510)]
+    assert [rw.text for rw in c._repair_split_amount_words(words)] == ["100,00", "2.000,00"]
+
+
+def test_repair_split_amount_words_non_ricompone_se_seguito_non_e_cifre_nude():
+    # Il decimale troncato resta isolato se la Word successiva non e' una
+    # breve sequenza di sole cifre (nessun recupero possibile).
+    words = [w("2.911,2", 476), w("NETTO", 541)]
+    assert [rw.text for rw in c._repair_split_amount_words(words)] == ["2.911,2", "NETTO"]
+
+
+def test_repair_split_amount_words_lista_vuota():
+    assert c._repair_split_amount_words([]) == []
+
+
+def test_extract_totals_ricompone_competenze_spezzato():
+    rows = [
+        trow(560.0, "Totale Ritenute Totale Competenze"),
+        Row(top=572.0, words=[w("1.229,03", 437), w("2.911,2", 476), w("3", 541)]),
+    ]
+    totals = c._extract_totals(rows)
+    assert totals.totale_trattenute == Decimal("1229.03")
+    assert totals.totale_competenze == Decimal("2911.23")
 
 
 def test_extract_totals_completo():

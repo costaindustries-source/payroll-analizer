@@ -107,6 +107,21 @@ _VOCI_END_NORM = normalize_label("Totale Ritenute Sociali")
 _CODICE_RE = re.compile(r"^([A-Z]?\d{4}|[A-Z]{5,8})$")
 _FIGURATIVO_FLAG = "F"
 
+# Marcatore di chiusura ALTERNATIVO della sezione voci (v. _VOCI_END_NORM):
+# "Totale Ritenute Sociali" e' il sottototale che chiude normalmente la
+# sezione, ma su 201811.pdf (unico documento Copernico a 2 pagine reali nel
+# corpus, marcatore "- segue -" a fondo pagina 1 - issue GH #34) la pagina di
+# continuazione non ha un proprio "Totale Ritenute Sociali": la sezione voci
+# vi riprende dall'header "Descrizione/Competenze" ma senza mai chiudersi,
+# ingoiando come falsi candidati voce l'intero blocco footer (IBAN, TFR,
+# riepilogo annuale, ferie) fino a fine pagina. Gli stessi due marcatori
+# usati da _extract_totals per il totale di GRAN totale (non il sottototale
+# sociale) chiudono comunque sempre la sezione voci, anche sulle pagine
+# "normali" dove compaiono sempre DOPO "Totale Ritenute Sociali" (nessuna
+# regressione: la chiusura scatta comunque prima, sull'altro marcatore).
+_GRAND_TOTAL_NORM_A = normalize_label("Totale Ritenute")
+_GRAND_TOTAL_NORM_B = normalize_label("Totale Competenze")
+
 # Trattenuta INPS Contributo FAP (Fondo Pensioni Complementare): riga a
 # etichetta testuale fissa (aliquota 9,490 / imponibile / importo), non a
 # codice causale a 4 cifre come le altre voci - presente su 20/20 cedolini
@@ -435,7 +450,7 @@ def _extract_pay_lines_from_page(rows: list[Row]) -> tuple[list[PayLineDTO], lis
             if _VOCI_START_MARKER_A in norm and _VOCI_START_MARKER_B in norm:
                 in_section = True
             continue
-        if _VOCI_END_NORM in norm:
+        if _VOCI_END_NORM in norm or (_GRAND_TOTAL_NORM_A in norm and _GRAND_TOTAL_NORM_B in norm):
             break
         parsed = _parse_pay_line_row(row) or _parse_inps_fap_row(row)
         if parsed is not None:
@@ -563,14 +578,43 @@ def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
     return balances
 
 
+# Un importo del totale (sempre a 2 decimali in questo template, a
+# differenza dei campi "Dato Base"/aliquota che usano 5 decimali) puo'
+# perdere l'ultima cifra in una Word separata per lo stesso motivo del
+# glitch di posizione x0 osservato su CTRAGG (issue GH #35: un carattere
+# finale ricostruito da _reconstruct_words con un x0 anomalo rispetto al
+# resto del token, v. extraction.py) - osservato su 201811.pdf, unico
+# documento a 2 pagine del corpus (issue GH #34), dove "2.911,23" arrivava
+# spezzato in "2.911,2" + "3" e la vecchia logica (value_words[-1]) prendeva
+# silenziosamente "3" come totale competenze. Il decimale troncato (una sola
+# cifra dopo la virgola) e' un segnale affidabile e specifico - non rischia
+# di confondersi con gli importi a 5 decimali, che ne hanno sempre >= 2 dopo
+# la virgola.
+_AMOUNT_DECIMAL_TRUNCATED_RE = re.compile(r"^\d{1,3}(\.\d{3})*,\d$")
+_BARE_DIGITS_RE = re.compile(r"^\d{1,2}$")
+
+
+def _repair_split_amount_words(words: list[Word]) -> list[Word]:
+    repaired: list[Word] = []
+    i = 0
+    while i < len(words):
+        word = words[i]
+        nxt = words[i + 1] if i + 1 < len(words) else None
+        if nxt is not None and _AMOUNT_DECIMAL_TRUNCATED_RE.match(word.text) and _BARE_DIGITS_RE.match(nxt.text):
+            repaired.append(Word(text=word.text + nxt.text, x0=word.x0, x1=nxt.x1, top=word.top, bottom=nxt.bottom))
+            i += 2
+            continue
+        repaired.append(word)
+        i += 1
+    return repaired
+
+
 def _extract_totals(rows: list[Row]) -> PayrollTotalsDTO:
     totals = PayrollTotalsDTO()
-    tot_ritenute_norm = normalize_label("Totale Ritenute")
-    tot_competenze_norm = normalize_label("Totale Competenze")
     for i, row in enumerate(rows):
         norm = normalize_label(row.text)
-        if tot_ritenute_norm in norm and tot_competenze_norm in norm and i + 1 < len(rows):
-            value_words = [w for w in rows[i + 1].words if parse_amount(w.text) is not None]
+        if _GRAND_TOTAL_NORM_A in norm and _GRAND_TOTAL_NORM_B in norm and i + 1 < len(rows):
+            value_words = [w for w in _repair_split_amount_words(rows[i + 1].words) if parse_amount(w.text) is not None]
             if len(value_words) >= 2:
                 totals.totale_trattenute = parse_amount(value_words[0].text)
                 totals.totale_competenze = parse_amount(value_words[-1].text)
