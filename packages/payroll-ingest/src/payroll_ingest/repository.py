@@ -176,6 +176,7 @@ def save_document(
                 irpef_lorda=dto.tax.irpef_lorda,
                 detrazioni_lav_dip=dto.tax.detrazioni_lav_dip,
                 ritenute_irpef=dto.tax.ritenute_irpef,
+                imponibile_previdenziale_non_arrotondato=dto.tax.imponibile_previdenziale_non_arrotondato,
                 addizionale_regionale=dto.tax.addizionale_regionale,
                 addizionale_regionale_regione=dto.tax.addizionale_regionale_regione,
                 addizionale_comunale=dto.tax.addizionale_comunale,

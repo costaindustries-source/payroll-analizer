@@ -95,6 +95,9 @@ class TaxDTO:
     irpef_lorda: Decimal | None = None
     detrazioni_lav_dip: Decimal | None = None
     ritenute_irpef: Decimal | None = None
+    # Imponibile INPS/INAIL del mese non arrotondato, riga a etichetta fissa
+    # distinta da imponibile_irpef (v. issue #37, solo template Copernico).
+    imponibile_previdenziale_non_arrotondato: Decimal | None = None
     addizionale_regionale: Decimal | None = None
     addizionale_regionale_regione: str | None = None
     addizionale_comunale: Decimal | None = None

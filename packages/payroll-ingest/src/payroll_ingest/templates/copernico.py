@@ -113,6 +113,12 @@ _FIGURATIVO_FLAG = "F"
 # Copernico verificati, mai mappata prima (issue GH #28).
 _INPS_FAP_LABEL_NORM = normalize_label("INPS Contributo FAP")
 
+# "Imponibile Previdenziale Non Arrotondato <importo>": etichetta+valore su
+# un'unica riga come INPS Contributo FAP, ma un solo importo (non un codice
+# causale) - presente su virtualmente ogni Copernico ordinario, mai finito in
+# nessuna colonna strutturata prima (issue GH #37).
+_IMPONIBILE_PREVIDENZIALE_LABEL_NORM = normalize_label("Imponibile Previdenziale Non Arrotondato")
+
 # Soglie x0 calibrate su docs/new-templates/2016/201610.pdf (PDFsharp) e
 # 2018/201804.pdf (Win2PDF ricostruito), v. piano §2.1. Il layout non cambia
 # tra i due producer, solo il rendering del font. Tutto cio' che sta a sinistra
@@ -401,6 +407,24 @@ def _parse_inps_fap_row(row: Row) -> PayLineDTO | None:
     )
 
 
+def _match_imponibile_previdenziale_non_arrotondato(row: Row) -> Decimal | None:
+    """Ritorna l'importo se la riga e' l'etichetta 'Imponibile Previdenziale
+    Non Arrotondato' seguita da un valore, None altrimenti (anche quando
+    l'etichetta compare da sola, senza importo, come boilerplate di sezione -
+    in quel caso non c'e' nulla da recuperare, v. issue GH #37)."""
+    if not normalize_label(row.text).startswith(_IMPONIBILE_PREVIDENZIALE_LABEL_NORM):
+        return None
+    return first_amount(row.words)
+
+
+def _extract_imponibile_previdenziale_non_arrotondato(rows: list[Row]) -> Decimal | None:
+    for row in rows:
+        amount = _match_imponibile_previdenziale_non_arrotondato(row)
+        if amount is not None:
+            return amount
+    return None
+
+
 def _extract_pay_lines_from_page(rows: list[Row]) -> tuple[list[PayLineDTO], list[str]]:
     pay_lines: list[PayLineDTO] = []
     unmapped: list[str] = []
@@ -416,6 +440,8 @@ def _extract_pay_lines_from_page(rows: list[Row]) -> tuple[list[PayLineDTO], lis
         parsed = _parse_pay_line_row(row) or _parse_inps_fap_row(row)
         if parsed is not None:
             pay_lines.append(parsed)
+        elif _match_imponibile_previdenziale_non_arrotondato(row) is not None:
+            continue
         elif row.text.strip():
             unmapped.append(row.text)
     return pay_lines, unmapped
@@ -589,6 +615,7 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
         unmapped_rows.extend(p_unmapped)
 
     tax = _extract_tax(all_rows)
+    tax.imponibile_previdenziale_non_arrotondato = _extract_imponibile_previdenziale_non_arrotondato(all_rows)
     tfr = _extract_tfr(all_rows)
     leave_balances = _extract_leave_balances(all_rows)
     totals = _extract_totals(all_rows)

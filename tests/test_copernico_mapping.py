@@ -423,6 +423,41 @@ def test_parse_inps_fap_row_meno_di_tre_importi_non_matcha():
 
 
 # ---------------------------------------------------------------------------
+# _match_imponibile_previdenziale_non_arrotondato / _extract_imponibile_previdenziale_non_arrotondato (issue #37)
+# ---------------------------------------------------------------------------
+
+
+def test_match_imponibile_previdenziale_con_importo():
+    row = trow(300.0, "Imponibile Previdenziale Non Arrotondato 2.324,37")
+    assert c._match_imponibile_previdenziale_non_arrotondato(row) == Decimal("2324.37")
+
+
+def test_match_imponibile_previdenziale_senza_importo_non_matcha():
+    # Etichetta di sezione senza valore (boilerplate) - v.
+    # test_extract_pay_lines_from_page_delimita_sezione_e_scarta_boilerplate:
+    # resta correttamente in unmapped, non c'e' nulla da recuperare.
+    row = trow(300.0, "Imponibile Previdenziale Non Arrotondato")
+    assert c._match_imponibile_previdenziale_non_arrotondato(row) is None
+
+
+def test_match_imponibile_previdenziale_etichetta_diversa_non_matcha():
+    row = trow(100.0, "Imponibile Fiscale Mese 2.000,00")
+    assert c._match_imponibile_previdenziale_non_arrotondato(row) is None
+
+
+def test_extract_imponibile_previdenziale_non_arrotondato_trova_il_valore():
+    rows = [
+        trow(255.0, "Cod. Descrizione Ore/GG % Dato Base Ritenute Competenze"),
+        trow(300.0, "Imponibile Previdenziale Non Arrotondato 2.324,37"),
+    ]
+    assert c._extract_imponibile_previdenziale_non_arrotondato(rows) == Decimal("2324.37")
+
+
+def test_extract_imponibile_previdenziale_non_arrotondato_assente_resta_none():
+    assert c._extract_imponibile_previdenziale_non_arrotondato([trow(1.0, "riga qualunque")]) is None
+
+
+# ---------------------------------------------------------------------------
 # _extract_pay_lines_from_page
 # ---------------------------------------------------------------------------
 
@@ -451,6 +486,21 @@ def test_extract_pay_lines_from_page_riconosce_riga_inps_fap():
     pay_lines, unmapped = c._extract_pay_lines_from_page(rows)
     assert len(pay_lines) == 2
     assert pay_lines[1].descrizione == "INPS Contributo FAP"
+    assert unmapped == []
+
+
+def test_extract_pay_lines_from_page_esclude_imponibile_previdenziale_con_importo_da_unmapped():
+    # Issue #37: a differenza del boilerplate senza importo (v. test sopra),
+    # quando la riga ha un valore reale non deve finire in unmapped (il
+    # valore viene comunque recuperato da _extract_imponibile_previdenziale_non_arrotondato).
+    rows = [
+        trow(255.0, "Cod. Descrizione Ore/GG % Dato Base Ritenute Competenze"),
+        Row(top=264.0, words=[w("0001", 20), w("RETRIBUZIONE", 55), w("1.500,00", 529)]),
+        trow(300.0, "Imponibile Previdenziale Non Arrotondato 2.324,37"),
+        trow(325.0, "Totale Ritenute Sociali"),
+    ]
+    pay_lines, unmapped = c._extract_pay_lines_from_page(rows)
+    assert len(pay_lines) == 1
     assert unmapped == []
 
 
@@ -793,11 +843,14 @@ def test_map_document_periodo_non_riconosciuto():
 
 def test_map_document_righe_non_mappate_con_importo_genera_anomalia():
     rows = _happy_path_rows() + []
-    # Riga di boilerplate senza codice ma con un importo reale (issue #32:
-    # solo le righe con un valore numerico sono un candidato a perdita di
-    # dato, non il puro rumore testuale - v. test sotto).
+    # Riga di boilerplate senza codice ma con un importo reale, etichetta
+    # generica (issue #32: solo le righe con un valore numerico sono un
+    # candidato a perdita di dato, non il puro rumore testuale - v. test
+    # sotto). "Imponibile Previdenziale Non Arrotondato" NON va piu' bene qui
+    # da issue #37 in poi: quella riga e' ora riconosciuta ed esclusa da
+    # unmapped, v. test_map_document_imponibile_previdenziale_non_arrotondato.
     idx = rows.index(next(r for r in rows if r.text == "Totale Ritenute Sociali"))
-    rows.insert(idx, trow(300.0, "Imponibile Previdenziale Non Arrotondato 2.324,37"))
+    rows.insert(idx, trow(300.0, "Voce Sconosciuta Di Test 99,99"))
     doc = _doc(rows)
     dto = c.map_document(doc)
     anomalia = next(a for a in dto.anomalies if a.tipo == "righe_non_mappate")
@@ -855,6 +908,17 @@ def test_map_document_iban_non_valido():
     doc = _doc(rows)
     dto = c.map_document(doc)
     assert any(a.tipo == "iban_non_valido" for a in dto.anomalies)
+
+
+def test_map_document_imponibile_previdenziale_non_arrotondato():
+    rows = _happy_path_rows()
+    idx = rows.index(next(r for r in rows if r.text == "Totale Ritenute Sociali"))
+    rows.insert(idx, trow(300.0, "Imponibile Previdenziale Non Arrotondato 2.324,37"))
+    doc = _doc(rows)
+    dto = c.map_document(doc)
+    assert dto.tax.imponibile_previdenziale_non_arrotondato == Decimal("2324.37")
+    assert dto.unrecognized_row_texts == []
+    assert not any(a.tipo == "righe_non_mappate" for a in dto.anomalies)
 
 
 def test_map_document_multipagina_concatena_pay_lines():

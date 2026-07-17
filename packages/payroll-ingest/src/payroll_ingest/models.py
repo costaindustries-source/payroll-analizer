@@ -166,6 +166,7 @@ class Tax(Base):
     irpef_lorda: Mapped[Decimal | None] = mapped_column(NUMERIC)
     detrazioni_lav_dip: Mapped[Decimal | None] = mapped_column(NUMERIC)
     ritenute_irpef: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    imponibile_previdenziale_non_arrotondato: Mapped[Decimal | None] = mapped_column(NUMERIC)
     addizionale_regionale: Mapped[Decimal | None] = mapped_column(NUMERIC)
     addizionale_regionale_regione: Mapped[str | None] = mapped_column(String(64))
     addizionale_comunale: Mapped[Decimal | None] = mapped_column(NUMERIC)
