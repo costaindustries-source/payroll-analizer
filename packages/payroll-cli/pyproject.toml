@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "CLI operativa (host) per payroll-analizer: setup, update, backup/restore, release, manutenzione."
 requires-python = ">=3.11"
 dependencies = [
-    "typer>=0.26.8",
+    "typer>=0.27.0",
     "rich>=13.9",
     "tomli-w>=1.1",
 ]
