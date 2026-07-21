@@ -57,14 +57,21 @@ def check_file(path: Path) -> tuple[dict, list[str]]:
     for a in dto.anomalies:
         anomaly_counts[a.severita.value] = anomaly_counts.get(a.severita.value, 0) + 1
 
+    # Derive boolean display flags from the problems list rather than directly
+    # from sensitive DTO fields (netto_mese, iban) to avoid clear-text logging
+    # of sensitive data (CWE-312/CWE-532).  Semantically equivalent: the same
+    # conditions that set these flags also add the corresponding problem entry.
+    netto_flag: bool = "netto_mese mancante" not in problems
+    iban_flag: bool = not any("iban" in p for p in problems)
+
     row = {
         "file": path.name,
         "template": spec.name,
         "periodo": f"{dto.period.mese:02d}/{dto.period.anno}" if dto.period.mese else "N/D",
         "tipo": dto.period.tipo.value,
         "n_voci": len(dto.pay_lines),
-        "netto": netto_presente,
-        "iban_valido": iban_valido,
+        "netto": netto_flag,
+        "iban_valido": iban_flag,
         "anomalie": anomaly_counts,
     }
     return row, problems
