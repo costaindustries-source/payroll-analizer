@@ -248,18 +248,6 @@ wheels = [
 ]
 
 [[package]]
-name = "deprecation"
-version = "2.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "packaging" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5a/d3/8ae2869247df154b64c1884d7346d412fed0c49df84db635aab2d1c40e62/deprecation-2.1.0.tar.gz", hash = "sha256:72b3bde64e5d778694b0cf68178aed03d15e15477116add3fb773e581f9518ff", size = 173788, upload-time = "2020-04-20T14:23:38.738Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/c3/253a89ee03fc9b9682f1541728eb66db7db22148cd94f89ab22528cd1e1b/deprecation-2.1.0-py2.py3-none-any.whl", hash = "sha256:a10811591210e1fb0e768a8c25517cabeabcba6f0bf96564f8ff45189f90b14a", size = 11178, upload-time = "2020-04-20T14:23:36.581Z" },
-]
-
-[[package]]
 name = "fonttools"
 version = "4.63.0"
 source = { registry = "https://pypi.org/simple" }
@@ -468,10 +456,9 @@ wheels = [
 
 [[package]]
 name = "ocrmypdf"
-version = "17.8.0"
+version = "17.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "deprecation" },
     { name = "fpdf2" },
     { name = "img2pdf" },
     { name = "packaging" },
@@ -485,9 +472,9 @@ dependencies = [
     { name = "rich" },
     { name = "uharfbuzz" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4b/c4/c44db9ff5282e7c73856f437434777745d18bb9404f431df70e786a6bcc7/ocrmypdf-17.8.0.tar.gz", hash = "sha256:c36d9e53c93ef3c3fd41f283cffce20626ee39a7cc0ff4c2bf484a03634a114c", size = 7447248, upload-time = "2026-07-01T08:13:10.904Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/2e/7d429156859602ffc9929ffb014eb11da931e653a21c64d5cabfc30c3ccd/ocrmypdf-17.8.1.tar.gz", hash = "sha256:6f72e4da5fd7805e5d677c0fc55ad380c70e1c7ad33dd9ce2402575194803e08", size = 7451173, upload-time = "2026-07-16T20:55:09.412Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f7/a7/fc484e50ec0f02e1410ed55406a410143892fbf87997fe15a4947adaf05a/ocrmypdf-17.8.0-py3-none-any.whl", hash = "sha256:5ef59f01a608c0ef87da22742d6d41eb4392d81ef1275fe5580210bf0056a195", size = 511518, upload-time = "2026-07-01T08:13:09.175Z" },
+    { url = "https://files.pythonhosted.org/packages/95/29/ce4e14fbb63ea7a1d5749ac97ccafe60e915d50ad3c4a06fddd782e952d2/ocrmypdf-17.8.1-py3-none-any.whl", hash = "sha256:df236ea84b6c5d9d1979fd410ca786b67da428a9e6cb0b26654e3039ac129704", size = 514050, upload-time = "2026-07-16T20:55:07.497Z" },
 ]
 
 [[package]]
@@ -536,7 +523,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.18.5" },
-    { name = "ocrmypdf", specifier = ">=17.8.0" },
+    { name = "ocrmypdf", specifier = ">=17.8.1" },
     { name = "pdfplumber", specifier = ">=0.11.10" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.4" },
     { name = "pydantic", specifier = ">=2.13.4" },

@@ -5,7 +5,7 @@ description = "Batch di ingestion cedolini PDF -> database PostgreSQL."
 requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.18.5",
-    "ocrmypdf>=17.8.0",
+    "ocrmypdf>=17.8.1",
     "pdfplumber>=0.11.10",
     "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
