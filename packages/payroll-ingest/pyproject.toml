@@ -11,7 +11,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "pymupdf>=1.28.0",
-    "sqlalchemy>=2.0.51",
+    "sqlalchemy>=2.1.0",
     "structlog>=26.1.0",
     "typer>=0.27.2",
 ]
