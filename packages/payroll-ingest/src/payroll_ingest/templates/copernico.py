@@ -31,6 +31,14 @@ from payroll_ingest.dto import (
 )
 from payroll_ingest.extraction import RawExtractedDocument, Row, Word
 from payroll_ingest.normalize import normalize_label, parse_amount
+from payroll_ingest.templates._grid import (
+    cell_bounds,
+    cell_index,
+    find_lines,
+    geo_lines,
+    read_header_value_row,
+    value_line_below,
+)
 from payroll_ingest.templates._common import (
     COLUMN_MATCH_TOLERANCE,
     PAREN_MARKERS,
@@ -522,23 +530,16 @@ def _extract_tfr(rows: list[Row]) -> TfrDTO:
     return tfr
 
 
-# Riepilogo annuale (issue GH #45): box a fondo pagina presente su OGNI
-# documento Copernico (non solo tredicesima, a differenza di SAP HR/#31) con
-# 8 colonne (Imp.Fisc.Annuo/Imposta Dovuta/Imposta Pagata/Detraz.Effettive/
-# Imposta a Debito/Imposta a Credito/Detraz. Art. 13/Detraz. Altre), MAI
-# estratto prima. Verificato pero' su tutti i 32 documenti reali del corpus
-# che la LARGHEZZA di rendering delle colonne intermedie non e' fissa (si
-# comprime/espande in base al contenuto - 3 documenti su 32 hanno "Imposta
-# Dovuta" valorizzata invece che 0,00 e TUTTE le colonne successive si
-# spostano di conseguenza): una mappatura per soglia x0 fissa (come usata
-# altrove in questo modulo) produrrebbe un mismatch silenzioso su quei casi.
-# Estratto quindi SOLO il primo campo (Imp.Fisc.Annuo): e' sempre il primo
-# valore della riga su tutti i 32 campioni, quindi non soggetto alla
-# variabilita' di posizione delle colonne successive - le altre 7 colonne
-# (di questo box e dell'intero secondo box "Imp. INPS Annuo") restano
-# deliberatamente non mappate, serve un approccio piu' robusto (es. marker
-# derivati dalla riga di intestazione invece di soglie fisse) prima di
-# estenderle.
+# Riepilogo annuale (issue GH #45): due box a fondo pagina, presenti su OGNI
+# documento Copernico, con 8 colonne ciascuno. La larghezza delle colonne non
+# e' fissa e le celle vuote possono stare anche in mezzo (Imposta a
+# Debito/Credito sono mutuamente esclusive), quindi non si puo' mappare per
+# soglie x ne' per ordine: _extract_annual_summary assegna ogni importo alla
+# cella che lo contiene, usando la geometria di rendering (bordi di cella e
+# parole da PyMuPDF), e valida le etichette di intestazione di ogni cella.
+# _extract_imponibile_fiscale_annuo sotto resta come fallback quando la
+# geometria non c'e' (PDF passato dall'OCR): legge solo la prima colonna, che
+# e' sempre il primo valore della riga.
 _ANNUAL_FISCALE_ROW_NORM = normalize_label("Imp.Fisc.Annuo")
 
 
@@ -553,6 +554,73 @@ def _extract_imponibile_fiscale_annuo(rows: list[Row]) -> Decimal | None:
             if amount is not None:
                 return amount
     return None
+
+
+_ANNUAL_TAX_HEADER_RE = re.compile(r"Imp\.?\s*Fisc\.?\s*Annuo", re.IGNORECASE)
+_ANNUAL_INPS_HEADER_RE = re.compile(r"Imp\.?\s*INPS\s*Annuo", re.IGNORECASE)
+
+# (regex dell'intestazione nella cella, tabella DTO, campo). L'ordine e' quello
+# delle celle da sinistra a destra. "Imposta a Debito/Credito" equivalgono ai
+# conguagli annui di SAP HR (verificato: Debito = Dovuta - Detraz.Effettive -
+# Pagata); "Rit. INPS Annue" e' la ritenuta INPS a carico del dipendente.
+_ANNUAL_TAX_COLUMNS: list[tuple[str, str, str]] = [
+    (r"Fisc", "tax", "imponibile_fiscale_annuo"),
+    (r"Dovuta", "tax", "imposta_dovuta_annua"),
+    (r"Pagata", "tax", "imposta_pagata_annua"),
+    (r"Effettive", "tax", "detrazioni_effettive_annue"),
+    (r"Debito", "tax", "cong_debito_annuo"),
+    (r"Credito", "tax", "cong_credito_annuo"),
+    (r"Art", "tax", "detrazioni_art13_annue"),
+    (r"Altre", "tax", "detrazioni_altre_annue"),
+]
+_ANNUAL_INPS_COLUMNS: list[tuple[str, str, str]] = [
+    (r"INPS\s*Annuo", "tax", "imp_inps_progr_annuo"),
+    (r"INPS\s*Annue", "tax", "ctr_dip_inps_progr_annuo"),
+    (r"GG", "tax", "progr_gg_inps_annui"),
+    (r"Sett", "tax", "progr_sett_inps_annue"),
+    (r"^TFR\s*F\.di", "tfr", "tfr_fondi_compl"),
+    (r"^Ctr", "tfr", "ctr_az_fondi_compl"),
+    (r"31/12", "tfr", "tfr_fondi_compl_ap"),
+    (r"AC$", "tfr", "tfr_fondi_compl_ac"),
+]
+_ANNUAL_BOXES = (
+    (_ANNUAL_TAX_HEADER_RE, _ANNUAL_TAX_COLUMNS),
+    (_ANNUAL_INPS_HEADER_RE, _ANNUAL_INPS_COLUMNS),
+)
+
+
+def _read_first_filled_box(doc: RawExtractedDocument, header_re: re.Pattern[str], columns) -> list[Decimal | None] | None:
+    patterns = [re.compile(pattern, re.IGNORECASE) for pattern, _, _ in columns]
+    # Sui documenti multipagina il box compare anche come copia vuota (solo
+    # intestazione): si prende la prima occorrenza con valori.
+    for page in doc.pages:
+        if not page.geo_words:
+            continue
+        lines = geo_lines(page.geo_words)
+        for idx in find_lines(lines, header_re):
+            values = value_line_below(lines, idx)
+            if values is None:
+                continue
+            row = read_header_value_row(page.vlines, lines[idx], values, patterns)
+            if row is not None:
+                return row
+    return None
+
+
+def _extract_annual_summary(doc: RawExtractedDocument) -> tuple[dict[str, Decimal], dict[str, Decimal]]:
+    """Ritorna (campi_tax, campi_tfr) dei due box del riepilogo annuale. Un box
+    che non si riesce a leggere con certezza (nessuna geometria, numero di
+    celle o etichette inattesi) non produce nessun campo."""
+    tax_values: dict[str, Decimal] = {}
+    tfr_values: dict[str, Decimal] = {}
+    for header_re, columns in _ANNUAL_BOXES:
+        row = _read_first_filled_box(doc, header_re, columns)
+        if row is None:
+            continue
+        for (_, table, field), amount in zip(columns, row, strict=True):
+            if amount is not None:
+                (tax_values if table == "tax" else tfr_values)[field] = amount
+    return tax_values, tfr_values
 
 
 _LEAVE_HEADER_SPETTANTI_NORM = normalize_label("Spettanti")
@@ -571,12 +639,30 @@ def _find_leave_value_rows(rows: list[Row], header_idx: int) -> dict[str, Row]:
     return value_rows
 
 
+def _build_leave_balances(
+    ac_vals: list[Decimal | None], ap_vals: list[Decimal | None], ap2_vals: list[Decimal | None]
+) -> list[LeaveBalanceDTO]:
+    balances: list[LeaveBalanceDTO] = []
+    for i, tipo in enumerate(_LEAVE_TYPES):
+        maturato, goduto, residuo = ac_vals[i * 3], ac_vals[i * 3 + 1], ac_vals[i * 3 + 2]
+        residuo_ap = ap_vals[i * 3 + 2]
+        if maturato is None and goduto is None and residuo is None and residuo_ap is None:
+            continue
+        balances.append(
+            LeaveBalanceDTO(tipo=tipo, maturato=maturato, goduto=goduto, residuo=residuo, residuo_ap=residuo_ap)
+        )
+        residuo_ap2 = ap2_vals[i * 3 + 2]
+        if residuo_ap2 is not None and residuo_ap2 != 0:
+            balances.append(LeaveBalanceDTO(tipo=f"{tipo}_ap2", residuo=residuo_ap2))
+    return balances
+
+
 def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
-    # Su documenti multipagina (es. 201811.pdf, issue #34/#46) l'header
-    # "Spettanti/Godute/Residue" compare due volte (una copia vuota, senza
-    # righe AC/AP/AP2 seguenti, sulla pagina di continuazione mancante):
-    # prova OGNI occorrenza dell'header finche' non ne trova una seguita da
-    # almeno una riga AC/AP/AP2 reale, invece di fermarsi alla prima.
+    # Fallback su Row (nessuna geometria). Su documenti multipagina (es.
+    # 201811.pdf, issue #34/#46) l'header "Spettanti/Godute/Residue" compare
+    # due volte (una copia vuota, senza righe AC/AP/AP2 seguenti): prova OGNI
+    # occorrenza finche' non ne trova una seguita da almeno una riga
+    # AC/AP/AP2 reale, invece di fermarsi alla prima.
     value_rows: dict[str, Row] = {}
     for i, row in enumerate(rows):
         norm = normalize_label(row.text)
@@ -599,23 +685,62 @@ def _extract_leave_balances(rows: list[Row]) -> list[LeaveBalanceDTO]:
         vals = [parse_amount(w.text) for w in row.words[1:]]
         return (vals + [None] * 9)[:9]
 
-    ac_vals = amounts(ac_row)
-    ap_vals = amounts(value_rows.get("AP"))
-    ap2_vals = amounts(value_rows.get("AP2"))
+    return _build_leave_balances(amounts(ac_row), amounts(value_rows.get("AP")), amounts(value_rows.get("AP2")))
 
-    balances: list[LeaveBalanceDTO] = []
-    for i, tipo in enumerate(_LEAVE_TYPES):
-        maturato, goduto, residuo = ac_vals[i * 3], ac_vals[i * 3 + 1], ac_vals[i * 3 + 2]
-        residuo_ap = ap_vals[i * 3 + 2]
-        if maturato is None and goduto is None and residuo is None and residuo_ap is None:
+
+_LEAVE_HEADER_RE = re.compile(r"(Spettanti.*){3}", re.IGNORECASE)
+_LEAVE_LABELS = ("AC", "AP", "AP2")
+_LEAVE_N_COLUMNS = 9
+_LEAVE_LABEL_MAX_X0 = 40.0
+# Bordo sinistro delle celle dei valori, dopo la cella dell'etichetta AC/AP/AP2.
+_LEAVE_VALUES_MIN_X = 33.0
+_LEAVE_MAX_ROWS_BELOW_HEADER = 5
+
+
+def _read_leave_row_values(vlines, line) -> list[Decimal | None] | None:
+    bounds = cell_bounds(vlines, line.y, min_x=_LEAVE_VALUES_MIN_X)
+    values = [w for w in line.words[1:] if parse_amount(w.text) is not None]
+    if not values:
+        # Copia vuota della tabella (multipagina): solo etichette, nessun importo.
+        return None
+    if len(bounds) != _LEAVE_N_COLUMNS:
+        # Senza 9 celle riconoscibili si accetta solo una riga completa: un
+        # importo non si assegna a una colonna per posizione incerta.
+        return [parse_amount(w.text) for w in values] if len(values) == _LEAVE_N_COLUMNS else None
+    result: list[Decimal | None] = [None] * _LEAVE_N_COLUMNS
+    for w in values:
+        idx = cell_index(bounds, w)
+        if idx is None or result[idx] is not None:
+            return None
+        result[idx] = parse_amount(w.text)
+    return result
+
+
+def _extract_leave_balances_geo(doc: RawExtractedDocument) -> list[LeaveBalanceDTO] | None:
+    """Saldi ferie/permessi dalla geometria di rendering (issue #46): etichetta
+    (AC/AP/AP2) e valori sono nella stessa riga di rendering anche dove
+    l'estrazione per Row li separa (scarto di ~3pt sui Win2PDF), e l'header
+    e' riconosciuto anche se il testo estratto e' spezzato ("Go" + "dute").
+    None se la tabella non si riesce a leggere: il chiamante usa il fallback."""
+    for page in doc.pages:
+        if not page.geo_words:
             continue
-        balances.append(
-            LeaveBalanceDTO(tipo=tipo, maturato=maturato, goduto=goduto, residuo=residuo, residuo_ap=residuo_ap)
-        )
-        residuo_ap2 = ap2_vals[i * 3 + 2]
-        if residuo_ap2 is not None and residuo_ap2 != 0:
-            balances.append(LeaveBalanceDTO(tipo=f"{tipo}_ap2", residuo=residuo_ap2))
-    return balances
+        lines = geo_lines(page.geo_words)
+        for idx in find_lines(lines, _LEAVE_HEADER_RE):
+            value_rows: dict[str, list[Decimal | None]] = {}
+            for line in lines[idx + 1 : idx + 1 + _LEAVE_MAX_ROWS_BELOW_HEADER]:
+                label = line.words[0].text.upper()
+                if line.words[0].x0 >= _LEAVE_LABEL_MAX_X0 or label not in _LEAVE_LABELS or label in value_rows:
+                    continue
+                values = _read_leave_row_values(page.vlines, line)
+                if values is not None:
+                    value_rows[label] = values
+            if "AC" in value_rows:
+                blank = [None] * _LEAVE_N_COLUMNS
+                return _build_leave_balances(
+                    value_rows["AC"], value_rows.get("AP", blank), value_rows.get("AP2", blank)
+                )
+    return None
 
 
 # Un importo del totale (sempre a 2 decimali in questo template, a
@@ -700,9 +825,17 @@ def map_document(doc: RawExtractedDocument) -> PayrollDocumentDTO:
 
     tax = _extract_tax(all_rows)
     tax.imponibile_previdenziale_non_arrotondato = _extract_imponibile_previdenziale_non_arrotondato(all_rows)
-    tax.imponibile_fiscale_annuo = _extract_imponibile_fiscale_annuo(all_rows)
     tfr = _extract_tfr(all_rows)
-    leave_balances = _extract_leave_balances(all_rows)
+    annual_tax_values, annual_tfr_values = _extract_annual_summary(doc)
+    for field, amount in annual_tax_values.items():
+        setattr(tax, field, amount)
+    for field, amount in annual_tfr_values.items():
+        setattr(tfr, field, amount)
+    if "imponibile_fiscale_annuo" not in annual_tax_values:
+        tax.imponibile_fiscale_annuo = _extract_imponibile_fiscale_annuo(all_rows)
+    leave_balances = _extract_leave_balances_geo(doc)
+    if leave_balances is None:
+        leave_balances = _extract_leave_balances(all_rows)
     totals = _extract_totals(all_rows)
 
     period_type, mese, anno, label_originale = _parse_period(doc.first_page.rows)

@@ -4,6 +4,32 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+### Fix
+- Copernico, riepilogo annuale (issue #45, ora completo): estratte tutte le 8
+  colonne del box fiscale (Imp.Fisc.Annuo, Imposta Dovuta/Pagata, Detraz.
+  Effettive, Imposta a Debito/Credito, Detraz. Art. 13/Altre) e le 8 del box
+  INPS/TFR (Imp. INPS Annuo, Rit. INPS Annue, Progr. GG/Sett. INPS, TFR e
+  contributi azienda verso fondi complementari, 31/12 AP e AC). Prima si
+  leggeva solo la prima colonna perche' le larghezze variano e le celle vuote
+  possono stare anche in mezzo: ora ogni importo e' assegnato alla cella che
+  lo contiene (bordi di cella e parole da PyMuPDF, con etichette di
+  intestazione verificate cella per cella). Se la lettura non e' certa non si
+  assegna nulla e si ricade sul comportamento precedente.
+- Copernico, saldi ferie/permessi (issue #46, ora risolta anche su
+  `201811.pdf`): etichetta AC/AP/AP2 e valori vengono letti dalla stessa riga
+  di rendering, quindi non li separa piu' lo scarto di ~3pt dei Win2PDF, e
+  l'header e' riconosciuto anche se spezzato. Su 32 cedolini Copernico i saldi
+  passano da 20 a 32, senza differenze sui 20 che gia' funzionavano.
+
+### Aggiunto
+- Colonne `tax.detrazioni_effettive_annue`, `detrazioni_art13_annue`,
+  `detrazioni_altre_annue`, `progr_gg_inps_annui`, `progr_sett_inps_annue` e
+  `tfr.tfr_fondi_compl`, `ctr_az_fondi_compl`, `tfr_fondi_compl_ap`,
+  `tfr_fondi_compl_ac` (migration `a4c1d7e93b52`, solo colonne nullable).
+- `RawPage.geo_words` / `RawPage.vlines` (geometria di rendering da PyMuPDF,
+  vuote per i PDF passati dall'OCR) e `templates/_grid.py` con le primitive
+  per leggere tabelle a celle, riusabili dagli altri template.
+
 ## [v1.2.0] - 2026-09-30
 
 ### Aggiunto

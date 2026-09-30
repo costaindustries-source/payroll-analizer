@@ -285,8 +285,22 @@ def test_save_document_full_happy_path(db_session):
                 raw_text="F00100 Retribuzione ordinaria 1500,00",
             )
         ],
-        tax=TaxDTO(imponibile_irpef=Decimal("1500.00"), irpef_lorda=Decimal("300.00")),
-        tfr=TfrDTO(retribuzione_utile_tfr=Decimal("1500.00")),
+        tax=TaxDTO(
+            imponibile_irpef=Decimal("1500.00"),
+            irpef_lorda=Decimal("300.00"),
+            detrazioni_effettive_annue=Decimal("782.69"),
+            detrazioni_art13_annue=Decimal("62.88000"),
+            detrazioni_altre_annue=Decimal("1.00"),
+            progr_gg_inps_annui=Decimal("312.00"),
+            progr_sett_inps_annue=Decimal("52.00"),
+        ),
+        tfr=TfrDTO(
+            retribuzione_utile_tfr=Decimal("1500.00"),
+            tfr_fondi_compl=Decimal("10.00"),
+            ctr_az_fondi_compl=Decimal("20.00"),
+            tfr_fondi_compl_ap=Decimal("30.00"),
+            tfr_fondi_compl_ac=Decimal("40.00"),
+        ),
         leave_balances=[LeaveBalanceDTO(tipo="Ferie", maturato=Decimal("10"), goduto=Decimal("2"))],
         totals=PayrollTotalsDTO(totale_competenze=Decimal("1500.00"), netto_mese=Decimal("1200.00")),
         anomalies=[AnomalyDTO(tipo="test_anomaly", severita=AnomalySeverity.INFO, messaggio="nota di test")],
@@ -326,9 +340,18 @@ def test_save_document_full_happy_path(db_session):
     tax = db_session.scalar(select(Tax).where(Tax.document_id == document.id))
     assert tax is not None
     assert tax.imponibile_irpef == Decimal("1500.00")
+    assert tax.detrazioni_effettive_annue == Decimal("782.69")
+    assert tax.detrazioni_art13_annue == Decimal("62.88")
+    assert tax.detrazioni_altre_annue == Decimal("1.00")
+    assert tax.progr_gg_inps_annui == Decimal("312.00")
+    assert tax.progr_sett_inps_annue == Decimal("52.00")
 
     tfr = db_session.scalar(select(Tfr).where(Tfr.document_id == document.id))
     assert tfr is not None
+    assert tfr.tfr_fondi_compl == Decimal("10.00")
+    assert tfr.ctr_az_fondi_compl == Decimal("20.00")
+    assert tfr.tfr_fondi_compl_ap == Decimal("30.00")
+    assert tfr.tfr_fondi_compl_ac == Decimal("40.00")
 
     totals = db_session.scalar(select(PayrollTotals).where(PayrollTotals.document_id == document.id))
     assert totals is not None

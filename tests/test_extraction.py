@@ -218,3 +218,68 @@ def test_extract_document_normal_text_not_marked_recovered(tmp_path):
 
     document = extract_document(path)
     assert document.first_page.recovered_from_scramble is False
+
+
+# ---------------------------------------------------------------------------
+# Geometria di rendering (RawPage.geo_words / RawPage.vlines)
+# ---------------------------------------------------------------------------
+
+
+def _make_table_pdf(path):
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 105), "1.234,56", fontsize=10)
+    # bordi verticali di una cella (alti 20pt) e una linea orizzontale
+    for x in (50.0, 150.0):
+        page.draw_line((x, 90), (x, 110))
+    page.draw_line((50, 110), (150, 110))
+    doc.save(path)
+    doc.close()
+
+
+def test_extract_document_espone_parole_e_bordi_verticali(tmp_path):
+    path = tmp_path / "tabella.pdf"
+    _make_table_pdf(path)
+    page = extract_document(path).pages[0]
+    assert [w.text for w in page.geo_words] == ["1.234,56"]
+    assert sorted(round(v.x) for v in page.vlines) == [50, 150]
+    assert all(v.bottom - v.top >= 4 for v in page.vlines)
+
+
+def test_extract_document_con_ocr_non_calcola_la_geometria(tmp_path):
+    path = tmp_path / "tabella.pdf"
+    _make_table_pdf(path)
+    page = extract_document(path, ocr_used=True).pages[0]
+    assert page.geo_words == [] and page.vlines == []
+
+
+def test_extract_document_geometria_non_disponibile_ricade_su_liste_vuote(tmp_path, monkeypatch):
+    path = tmp_path / "tabella.pdf"
+    _make_table_pdf(path)
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("file rotto")
+
+    monkeypatch.setattr("payroll_ingest.extraction.pymupdf.open", boom)
+    doc = extract_document(path)
+    assert doc.pages[0].geo_words == [] and doc.pages[0].vlines == []
+    assert doc.pages[0].rows  # l'estrazione per Row non dipende dalla geometria
+
+
+def test_extract_document_numero_di_pagine_discordante_lascia_la_geometria_vuota(tmp_path, monkeypatch):
+    path = tmp_path / "tabella.pdf"
+    _make_table_pdf(path)
+    real_open = fitz.open
+
+    class TwoPages:
+        page_count = 2
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    monkeypatch.setattr("payroll_ingest.extraction.pymupdf.open", lambda *_a, **_k: TwoPages())
+    assert extract_document(path).pages[0].vlines == []
+    assert real_open  # il modulo reale resta disponibile per gli altri test

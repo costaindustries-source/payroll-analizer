@@ -114,6 +114,12 @@ class TaxDTO:
     ctr_dip_inps_progr_annuo: Decimal | None = None
     cong_credito_annuo: Decimal | None = None
     cong_debito_annuo: Decimal | None = None
+    # Altre colonne del riepilogo annuale Copernico (issue #45).
+    detrazioni_effettive_annue: Decimal | None = None
+    detrazioni_art13_annue: Decimal | None = None
+    detrazioni_altre_annue: Decimal | None = None
+    progr_gg_inps_annui: Decimal | None = None
+    progr_sett_inps_annue: Decimal | None = None
     classification: DataClassification = DataClassification.OPZIONALE
 
 
@@ -128,6 +134,13 @@ class TfrDTO:
     # Cumulata dell'anno (solo tipo=mensilita_aggiuntiva, v. issue #31),
     # distinta da retribuzione_utile_tfr che e' il valore del mese.
     retribuzione_utile_tfr_annua: Decimal | None = None
+    # TFR e contributi verso fondi complementari dal riepilogo annuale
+    # Copernico (issue #45): tfr_fondi_compl_ap = "a Fondi Compl. 31/12 AP",
+    # tfr_fondi_compl_ac = "a Fondi Compl. AC".
+    tfr_fondi_compl: Decimal | None = None
+    ctr_az_fondi_compl: Decimal | None = None
+    tfr_fondi_compl_ap: Decimal | None = None
+    tfr_fondi_compl_ac: Decimal | None = None
     classification: DataClassification = DataClassification.OPZIONALE
 
 

@@ -190,6 +190,11 @@ def save_document(
                 ctr_dip_inps_progr_annuo=dto.tax.ctr_dip_inps_progr_annuo,
                 cong_credito_annuo=dto.tax.cong_credito_annuo,
                 cong_debito_annuo=dto.tax.cong_debito_annuo,
+                detrazioni_effettive_annue=dto.tax.detrazioni_effettive_annue,
+                detrazioni_art13_annue=dto.tax.detrazioni_art13_annue,
+                detrazioni_altre_annue=dto.tax.detrazioni_altre_annue,
+                progr_gg_inps_annui=dto.tax.progr_gg_inps_annui,
+                progr_sett_inps_annue=dto.tax.progr_sett_inps_annue,
             )
         )
 
@@ -204,6 +209,10 @@ def save_document(
                 quota_anno=dto.tfr.quota_anno,
                 anticipi=dto.tfr.anticipi,
                 retribuzione_utile_tfr_annua=dto.tfr.retribuzione_utile_tfr_annua,
+                tfr_fondi_compl=dto.tfr.tfr_fondi_compl,
+                ctr_az_fondi_compl=dto.tfr.ctr_az_fondi_compl,
+                tfr_fondi_compl_ap=dto.tfr.tfr_fondi_compl_ap,
+                tfr_fondi_compl_ac=dto.tfr.tfr_fondi_compl_ac,
             )
         )
 

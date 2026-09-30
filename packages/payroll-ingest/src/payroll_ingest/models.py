@@ -180,6 +180,11 @@ class Tax(Base):
     ctr_dip_inps_progr_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
     cong_credito_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
     cong_debito_annuo: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    detrazioni_effettive_annue: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    detrazioni_art13_annue: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    detrazioni_altre_annue: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    progr_gg_inps_annui: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    progr_sett_inps_annue: Mapped[Decimal | None] = mapped_column(NUMERIC)
 
     document: Mapped[PayrollDocument] = relationship(back_populates="tax")
 
@@ -198,6 +203,10 @@ class Tfr(Base):
     quota_anno: Mapped[Decimal | None] = mapped_column(NUMERIC)
     anticipi: Mapped[Decimal | None] = mapped_column(NUMERIC)
     retribuzione_utile_tfr_annua: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    tfr_fondi_compl: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    ctr_az_fondi_compl: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    tfr_fondi_compl_ap: Mapped[Decimal | None] = mapped_column(NUMERIC)
+    tfr_fondi_compl_ac: Mapped[Decimal | None] = mapped_column(NUMERIC)
 
     document: Mapped[PayrollDocument] = relationship(back_populates="tfr")
 

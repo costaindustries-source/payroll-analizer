@@ -1039,3 +1039,206 @@ def test_map_document_multipagina_concatena_pay_lines():
     doc = _doc(pagina1, extra_pages=[pagina2])
     dto = c.map_document(doc)
     assert {line.codice for line in dto.pay_lines} == {"0001", "0002"}
+
+
+# ---------------------------------------------------------------------------
+# Lettura per celle dalla geometria di rendering (issue #45 / #46)
+# ---------------------------------------------------------------------------
+
+from payroll_ingest.extraction import VLine  # noqa: E402
+
+_EDGES_8 = [34.3, 35.5, 105.0, 171.0, 237.0, 294.0, 360.0, 426.0, 492.0, 557.0, 558.2]
+_TAX_HEADERS = [
+    "Imp.Fisc.Annuo",
+    "Imposta Dovuta",
+    "Imposta Pagata",
+    "Detraz.Effettive",
+    "Imposta a Debito",
+    "Imposta a Credito",
+    "Detraz. Art. 13",
+    "Detraz. Altre",
+]
+_INPS_HEADERS = [
+    "Imp. INPS Annuo",
+    "Rit. INPS Annue",
+    "Progr. GG INPS",
+    "Progr. Sett. INPS",
+    "TFR F.di Compl.",
+    "Ctr Az.F.di Compl.",
+    "TFR a Fondi Compl.31/12AP",
+    "TFR a Fondi Compl. AC",
+]
+
+
+def _cell_word(text: str, cell: int, y: float, edges: list[float] = _EDGES_8) -> Word:
+    # il primo bordo e' doppio (2 linee): le celle partono da edges[1]
+    bounds = [(edges[1], edges[2]), (edges[2], edges[3]), (edges[3], edges[4]), (edges[4], edges[5]),
+              (edges[5], edges[6]), (edges[6], edges[7]), (edges[7], edges[8]), (edges[8], edges[9])]
+    left, right = bounds[cell]
+    mid = (left + right) / 2
+    return Word(text=text, x0=mid - 15, x1=mid + 15, top=y - 5, bottom=y + 5)
+
+
+def _box_words(headers: list[str], values: list[str | None], header_y: float) -> list[Word]:
+    words = [_cell_word(h, i, header_y) for i, h in enumerate(headers)]
+    words += [_cell_word(v, i, header_y + 12) for i, v in enumerate(values) if v is not None]
+    return words
+
+
+def _grid_vlines(*ys: float) -> list[VLine]:
+    return [VLine(x=x, top=y - 9, bottom=y + 9) for y in ys for x in _EDGES_8]
+
+
+def _geo_page(words: list[Word], vlines: list[VLine]) -> RawPage:
+    page = _page([])
+    page.geo_words = words
+    page.vlines = vlines
+    return page
+
+
+def _geo_doc(*pages: RawPage) -> RawExtractedDocument:
+    return RawExtractedDocument(source_path=Path("sintetico.pdf"), pages=list(pages))
+
+
+_TAX_VALUES = ["28.667,99", "9.008,28", "7.973,36", "782,69", "252,23", None, "782,69000", None]
+_INPS_VALUES = ["36.892,00", "3.501,05", "312,00", "52,00", "1,00", "2,00", "3,00", "4,00"]
+
+
+def _full_page() -> RawPage:
+    words = _box_words(_TAX_HEADERS, _TAX_VALUES, 100.0) + _box_words(_INPS_HEADERS, _INPS_VALUES, 160.0)
+    return _geo_page(words, _grid_vlines(112.0, 172.0))
+
+
+def test_extract_annual_summary_assegna_per_cella_con_celle_vuote_in_mezzo():
+    tax, tfr = c._extract_annual_summary(_geo_doc(_full_page()))
+    assert tax["imponibile_fiscale_annuo"] == Decimal("28667.99")
+    assert tax["imposta_dovuta_annua"] == Decimal("9008.28")
+    assert tax["imposta_pagata_annua"] == Decimal("7973.36")
+    assert tax["detrazioni_effettive_annue"] == Decimal("782.69")
+    assert tax["cong_debito_annuo"] == Decimal("252.23")
+    # Imposta a Credito e Detraz. Altre sono celle vuote: non devono ricevere importi altrui
+    assert "cong_credito_annuo" not in tax
+    assert tax["detrazioni_art13_annue"] == Decimal("782.69000")
+    assert "detrazioni_altre_annue" not in tax
+    assert tax["imp_inps_progr_annuo"] == Decimal("36892.00")
+    assert tax["ctr_dip_inps_progr_annuo"] == Decimal("3501.05")
+    assert tax["progr_gg_inps_annui"] == Decimal("312.00")
+    assert tax["progr_sett_inps_annue"] == Decimal("52.00")
+    assert tfr == {
+        "tfr_fondi_compl": Decimal("1.00"),
+        "ctr_az_fondi_compl": Decimal("2.00"),
+        "tfr_fondi_compl_ap": Decimal("3.00"),
+        "tfr_fondi_compl_ac": Decimal("4.00"),
+    }
+
+
+def test_extract_annual_summary_credito_al_posto_del_debito():
+    values = ["1.000,00", "0,00", "500,00", "100,00", None, "88,00", "50,00000", None]
+    page = _geo_page(_box_words(_TAX_HEADERS, values, 100.0), _grid_vlines(112.0))
+    tax, _ = c._extract_annual_summary(_geo_doc(page))
+    assert tax["cong_credito_annuo"] == Decimal("88.00")
+    assert "cong_debito_annuo" not in tax
+
+
+def test_extract_annual_summary_salta_la_copia_vuota_della_prima_pagina():
+    empty = _geo_page(_box_words(_TAX_HEADERS, [], 100.0), _grid_vlines(112.0))
+    tax, _ = c._extract_annual_summary(_geo_doc(empty, _full_page()))
+    assert tax["imposta_pagata_annua"] == Decimal("7973.36")
+
+
+def test_extract_annual_summary_senza_geometria_non_produce_campi():
+    assert c._extract_annual_summary(_doc([trow(1.0, "Imp.Fisc.Annuo")])) == ({}, {})
+
+
+def test_extract_annual_summary_intestazione_inattesa_non_produce_campi():
+    # due etichette scambiate: nessun importo deve finire nella colonna sbagliata
+    swapped = _TAX_HEADERS.copy()
+    swapped[1], swapped[2] = swapped[2], swapped[1]
+    page = _geo_page(_box_words(swapped, _TAX_VALUES, 100.0), _grid_vlines(112.0))
+    assert c._extract_annual_summary(_geo_doc(page)) == ({}, {})
+
+
+def test_extract_annual_summary_numero_di_celle_inatteso_non_produce_campi():
+    page = _geo_page(_box_words(_TAX_HEADERS, _TAX_VALUES, 100.0), _grid_vlines(112.0)[:-3])
+    assert c._extract_annual_summary(_geo_doc(page)) == ({}, {})
+
+
+_LEAVE_EDGES = [34.0, 35.0] + [35.0 + 58.0 * i for i in range(1, 10)]
+
+
+def _leave_cell_word(text: str, cell: int, y: float) -> Word:
+    left, right = 35.0 + 58.0 * cell, 35.0 + 58.0 * (cell + 1)
+    mid = (left + right) / 2
+    return Word(text=text, x0=mid - 12, x1=mid + 12, top=y - 5, bottom=y + 5)
+
+
+def _leave_page(rows: dict[str, list[str | None]], header_y: float = 50.0) -> RawPage:
+    words = [_leave_cell_word(t, i, header_y) for i, t in enumerate(["Spettanti", "Godute", "Residue"] * 3)]
+    vlines = [VLine(x=x, top=header_y - 9, bottom=header_y + 9) for x in _LEAVE_EDGES]
+    for n, (label, vals) in enumerate(rows.items()):
+        y = header_y + 12 * (n + 1)
+        words.append(Word(text=label, x0=18.0, x1=30.0, top=y - 5, bottom=y + 5))
+        words += [_leave_cell_word(v, i, y) for i, v in enumerate(vals) if v is not None]
+        vlines += [VLine(x=x, top=y - 6, bottom=y + 6) for x in [20.0, 31.0] + _LEAVE_EDGES]
+    return _geo_page(words, vlines)
+
+
+def _nine(first: str) -> list[str | None]:
+    return [first, "1,00", "2,00", "3,00", "4,00", "5,00", "6,00", "7,00", "8,00"]
+
+
+def test_extract_leave_balances_geo_righe_ac_ap_ap2():
+    page = _leave_page({"AP2": _nine("9,00"), "AP": _nine("10,00"), "AC": _nine("20,00")})
+    balances = c._extract_leave_balances_geo(_geo_doc(page))
+    assert balances is not None
+    ferie = next(b for b in balances if b.tipo == "ferie")
+    assert (ferie.maturato, ferie.goduto, ferie.residuo) == (Decimal("20.00"), Decimal("1.00"), Decimal("2.00"))
+    assert ferie.residuo_ap == Decimal("2.00")
+    rol_ap2 = next(b for b in balances if b.tipo == "rol_ex_festivita_ap2")
+    assert rol_ap2.residuo == Decimal("5.00")
+
+
+def test_extract_leave_balances_geo_salta_la_copia_vuota_della_prima_pagina():
+    # issue #46: sulla pagina 0 ci sono solo le etichette AC/AP/AP2, senza importi
+    empty = _leave_page({"AP2": [None] * 9, "AP": [None] * 9, "AC": [None] * 9})
+    filled = _leave_page({"AP": _nine("10,00"), "AC": _nine("20,00")})
+    balances = c._extract_leave_balances_geo(_geo_doc(empty, filled))
+    assert balances is not None and len(balances) == 3
+
+
+def test_extract_leave_balances_geo_cella_vuota_non_sposta_gli_altri_importi():
+    values = _nine("20,00")
+    values[1] = None  # "Godute" della prima colonna vuota
+    balances = c._extract_leave_balances_geo(_geo_doc(_leave_page({"AC": values})))
+    ferie = next(b for b in balances if b.tipo == "ferie")
+    assert ferie.goduto is None
+    assert ferie.residuo == Decimal("2.00")
+
+
+def test_extract_leave_balances_geo_senza_geometria_restituisce_none():
+    assert c._extract_leave_balances_geo(_doc([trow(1.0, "Spettanti Godute Residue")])) is None
+
+
+def test_extract_leave_balances_geo_solo_intestazione_restituisce_none():
+    assert c._extract_leave_balances_geo(_geo_doc(_leave_page({}))) is None
+
+
+def test_map_document_usa_la_geometria_per_i_campi_annuali_e_le_ferie():
+    doc = _doc(_happy_path_rows())
+    doc.pages.append(_full_page())
+    doc.pages.append(_leave_page({"AC": _nine("20,00")}))
+    dto = c.map_document(doc)
+    assert dto.tax.detrazioni_effettive_annue == Decimal("782.69")
+    assert dto.tax.cong_debito_annuo == Decimal("252.23")
+    assert dto.tfr.tfr_fondi_compl_ac == Decimal("4.00")
+    assert dto.leave_balances and dto.leave_balances[0].tipo == "ferie"
+
+
+def test_map_document_senza_geometria_usa_il_fallback_su_righe():
+    rows = _happy_path_rows() + [
+        trow(700.0, "Imp.Fisc.Annuo Imposta Dovuta"),
+        trow(712.0, "6.141,36 0,00"),
+    ]
+    dto = c.map_document(_doc(rows))
+    assert dto.tax.imponibile_fiscale_annuo == Decimal("6141.36")
+    assert dto.tax.cong_debito_annuo is None

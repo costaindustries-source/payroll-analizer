@@ -13,6 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pdfplumber
+import pymupdf
+import structlog
+
+log = structlog.get_logger(__name__)
 
 SIDEBAR_MAX_X1 = 25.0
 ROW_CLUSTER_TOLERANCE = 3.0
@@ -54,6 +58,15 @@ class Row:
 
 
 @dataclass
+class VLine:
+    """Segmento verticale disegnato nel PDF (bordo di cella di una tabella)."""
+
+    x: float
+    top: float
+    bottom: float
+
+
+@dataclass
 class RawPage:
     words: list[Word]
     rows: list[Row]
@@ -61,6 +74,15 @@ class RawPage:
     width: float
     height: float
     recovered_from_scramble: bool = False
+    # Geometria "di rendering" da PyMuPDF: parole con bounding box reali e
+    # bordi verticali delle tabelle. Serve per le tabelle a celle in cui la
+    # posizione x del testo estratto da pdfplumber non e' affidabile (font
+    # Win2PDF: tutti i caratteri di una parola condividono l'origine del testo,
+    # che non coincide con dove il glifo e' disegnato). Vuote se non
+    # disponibili (PDF passato dall'OCR, errore di lettura): chi le usa deve
+    # avere un fallback.
+    geo_words: list[Word] = field(default_factory=list)
+    vlines: list[VLine] = field(default_factory=list)
 
 
 @dataclass
@@ -172,7 +194,48 @@ def extract_page(page: pdfplumber.page.Page) -> RawPage:
     )
 
 
+_VLINE_MAX_X_DRIFT = 0.6
+_VLINE_MIN_HEIGHT = 4.0
+_VRECT_MAX_WIDTH = 1.5
+
+
+def _extract_geometry(page: "pymupdf.Page") -> tuple[list[Word], list[VLine]]:
+    words = [
+        Word(text=w[4], x0=w[0], x1=w[2], top=w[1], bottom=w[3])
+        for w in page.get_text("words")
+        if w[4].strip()
+    ]
+    vlines: list[VLine] = []
+    for drawing in page.get_drawings():
+        for item in drawing["items"]:
+            if item[0] == "l":
+                a, b = item[1], item[2]
+                if abs(a.x - b.x) <= _VLINE_MAX_X_DRIFT and abs(a.y - b.y) >= _VLINE_MIN_HEIGHT:
+                    vlines.append(VLine(x=(a.x + b.x) / 2, top=min(a.y, b.y), bottom=max(a.y, b.y)))
+            elif item[0] == "re":
+                r = item[1]
+                if r.width <= _VRECT_MAX_WIDTH and r.height >= _VLINE_MIN_HEIGHT:
+                    vlines.append(VLine(x=(r.x0 + r.x1) / 2, top=r.y0, bottom=r.y1))
+    return words, vlines
+
+
+def _attach_geometry(path: Path, pages: list[RawPage]) -> None:
+    try:
+        with pymupdf.open(path) as mu_doc:
+            if mu_doc.page_count != len(pages):
+                log.warning("geometry_page_count_mismatch", path=path.name)
+                return
+            for raw_page, mu_page in zip(pages, mu_doc, strict=True):
+                raw_page.geo_words, raw_page.vlines = _extract_geometry(mu_page)
+    except (RuntimeError, ValueError) as exc:
+        # La geometria e' un arricchimento opzionale: senza, i template
+        # ricadono sull'estrazione basata sulle Row.
+        log.warning("geometry_unavailable", path=path.name, error=type(exc).__name__)
+
+
 def extract_document(path: Path, ocr_used: bool = False) -> RawExtractedDocument:
     with pdfplumber.open(path) as pdf:
         pages = [extract_page(page) for page in pdf.pages]
+    if not ocr_used:
+        _attach_geometry(path, pages)
     return RawExtractedDocument(source_path=path, pages=pages, ocr_used=ocr_used)
