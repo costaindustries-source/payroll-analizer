@@ -4,6 +4,46 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+### Aggiunto
+- Template **Copernico** e **SAP HR** accanto a Zucchetti, con registry
+  multi-template (riconoscimento automatico del formato).
+- SAP HR: estrazione del riepilogo annuale dei cedolini di tredicesima
+  (issue #31).
+- Copernico: estrazione di `Imp.Fisc.Annuo` -> `tax.imponibile_fiscale_annuo`
+  su tutti i cedolini (issue #45, **parziale**: restano da estrarre le altre
+  colonne del box fiscale e il box INPS annuo, vedi issue aperta).
+
+### Fix
+- Copernico: riconosciuti i codici alfanumerici e la descrizione non troncata
+  sui token unita' (issue #29); mappata la trattenuta INPS Contributo FAP
+  (issue #28); riconosciuto il conguaglio CTRAGG (issue #30); mappato
+  "Imponibile Previdenziale Non Arrotondato" (issue #37); chiusura robusta
+  della sezione voci e riparazione dell'importo troncato sui documenti
+  multipagina (issue #34).
+- Copernico: `leave_balances` prova ogni occorrenza dell'header
+  Spettanti/Godute/Residue invece della sola prima, che sui multipagina e'
+  spesso vuota (issue #46, **parziale**: su `201811.pdf` resta vuoto per un
+  caso di tolleranza di clustering, vedi issue aperta).
+- SAP HR: `totale_competenze`/`totale_trattenute` sbagliati su tutti i
+  cedolini (issue #42); sezione voci che non si chiudeva sui cedolini di
+  tredicesima (issue #43); confine descrizione/dati basato su x0 (issue #36).
+- `righe_non_mappate` scatta solo se la riga contiene un importo (issue #32).
+- OCR: `ocrmypdf` importato solo dentro `run_ocr()`, perche' l'import a livello
+  di modulo corrompeva la decodifica dei font di pdfminer (issue #25).
+- `Settings`: `populate_by_name` per non ignorare in silenzio gli override sui
+  campi con alias env-var (issue #33).
+- `payroll status`: controllo dell'immagine `app` stale reso deterministico
+  (issue #38) e avviso quando e' piu' vecchia dei sorgenti.
+- Sicurezza: risolto il finding CodeQL di logging in chiaro di dati sensibili
+  (CWE-312/CWE-532).
+
+### Test e tooling
+- Gate che esegue il percorso reale (`run_batch`) in `scripts/`; guardia a
+  runtime dei test contro il fallback su `search_path 'public'`.
+- Aggiornamenti di dipendenze e GitHub Actions (typer, ocrmypdf, alembic,
+  psycopg, cryptography 50, azioni CI) verificati con la suite completa
+  (688 test, ogni file >=80% di coverage).
+
 ## [v1.1.1] - 2026-07-15
 
 ### Aggiunto
