@@ -4,6 +4,8 @@ Formato ispirato a [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Non rilasciato]
 
+## [v1.2.0] - 2026-09-30
+
 ### Aggiunto
 - Template **Copernico** e **SAP HR** accanto a Zucchetti, con registry
   multi-template (riconoscimento automatico del formato).
