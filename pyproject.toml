@@ -6,7 +6,7 @@ package = false
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2",
+    "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
 ]
 
